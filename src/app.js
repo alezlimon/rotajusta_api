@@ -4,6 +4,7 @@
 const express = require('express');
 const cors = require('cors');
 const turnsRoutes = require('./routes/turnsRoutes');
+const { getBasicHealth, getReadinessProbe } = require('./services/healthService');
 
 const app = express();
 
@@ -16,9 +17,15 @@ app.use(express.json());
 
 app.use('/api/turnos', turnsRoutes);
 
-// --- Health check ---
+// --- Health checks ---
 
-app.get('/health', (_, res) => res.status(200).json({ status: 'ok' }));
+app.get('/health', (_, res) => res.status(200).json(getBasicHealth()));
+
+app.get('/health/ready', async (_, res) => {
+  const probe = await getReadinessProbe();
+  const statusCode = probe.database ? 200 : 503;
+  res.status(statusCode).json(probe);
+});
 
 // --- 404 ---
 

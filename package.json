@@ -7,7 +7,9 @@
         "start": "node src/index.js",
         "dev": "node --watch src/index.js",
         "test": "jest --verbose",
-        "migrate": "node src/db/migrate.js"
+        "migrate": "npm run migrate:up",
+        "migrate:up": "node-pg-migrate up -m src/db/migrations --envPath .env",
+        "migrate:down": "node-pg-migrate down -m src/db/migrations --envPath .env"
     },
     "dependencies": {
         "bcrypt": "^6.0.0",
@@ -15,6 +17,7 @@
         "dotenv": "^16.4.5",
         "express": "^4.19.2",
         "jsonwebtoken": "^9.0.2",
+        "node-pg-migrate": "^8.0.4",
         "pg": "^8.11.5",
         "swagger-jsdoc": "^6.2.8",
         "swagger-ui-express": "^5.0.1"

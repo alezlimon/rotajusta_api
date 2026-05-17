@@ -30,8 +30,9 @@ app.use((_, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 // --- Error handler (debe ser el último middleware) ---
 
 app.use((err, _, res, __) => {
-  console.error(err.stack);
-  res.status(err.status || 500).json({ error: 'Error interno del servidor' });
+  const status = err.status || 500;
+  const message = err.message || 'Error interno del servidor';
+  res.status(status).json({ error: message });
 });
 
 // --- Graceful shutdown ---

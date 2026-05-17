@@ -23,4 +23,10 @@ const POINTS_CONFIG = Object.freeze({
   WEEKEND_DAYS: Object.freeze([0, 5, 6]),
 });
 
-module.exports = { POINTS_CONFIG };
+// Configuración de autenticación y roles
+const AUTH_CONFIG = Object.freeze({
+  BCRYPT_SALT_ROUNDS: 10,
+  REQUIRED_ROLE_FOR_VALIDATION: 'MANAGER', // Solo managers pueden validar jornadas
+});
+
+module.exports = { POINTS_CONFIG, AUTH_CONFIG };

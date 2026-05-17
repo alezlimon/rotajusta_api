@@ -31,9 +31,18 @@ const normalizeTurnos = (turnos, fecha, es_festivo) =>
 const insertHistorial = (client, { empleado_id, fecha, puntos, es_turno_partido }) =>
   client.query(
     `INSERT INTO historial_puntos_diarios (usuario_id, fecha, puntos_totales, es_turno_partido)
-     VALUES ($1, $2, $3, $4)`,
+     VALUES ($1, $2, $3, $4) RETURNING id`,
     [empleado_id, fecha, puntos, es_turno_partido]
   );
+
+const insertTurnos = (client, historial_id, empleado_id, turnos) =>
+  Promise.all(turnos.map((t) =>
+    client.query(
+      `INSERT INTO turnos_guardados (historial_id, usuario_id, fecha, hora_inicio, hora_fin, es_festivo)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [historial_id, empleado_id, t.fecha, t.hora_inicio, t.hora_fin, t.es_festivo]
+    )
+  ));
 
 const updateSaldo = (client, empleado_id, puntos) =>
   client.query(
@@ -41,13 +50,14 @@ const updateSaldo = (client, empleado_id, puntos) =>
     [puntos, empleado_id]
   );
 
-// --- Transacción atómica: si falla el historial, no se suman puntos al usuario ---
+// --- Transacción atómica: si falla cualquier paso, se revierte todo ---
 
-const runTransaction = async (empleado_id, fecha, puntos, es_turno_partido) => {
+const runTransaction = async (empleado_id, fecha, puntos, es_turno_partido, turnos) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await insertHistorial(client, { empleado_id, fecha, puntos, es_turno_partido });
+    const { rows } = await insertHistorial(client, { empleado_id, fecha, puntos, es_turno_partido });
+    await insertTurnos(client, rows[0].id, empleado_id, turnos);
     await updateSaldo(client, empleado_id, puntos);
     await client.query('COMMIT');
   } catch (err) {
@@ -72,7 +82,7 @@ const validateDailyJornada = async (req, res) => {
     const puntos          = calcDailyPoints(normalized);
     const es_turno_partido = calcSplitShiftBonus(sorted) > 0;
 
-    await runTransaction(empleado_id, fecha, puntos, es_turno_partido);
+    await runTransaction(empleado_id, fecha, puntos, es_turno_partido, normalized);
 
     return res.status(200).json({ empleado_id, fecha, puntos_calculados: puntos, turnos_procesados: turnos.length, es_turno_partido });
   } catch (_) {

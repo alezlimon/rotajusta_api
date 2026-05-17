@@ -9,7 +9,7 @@ process.env.CORS_ORIGIN = 'http://localhost:3000';
 jest.mock('../config/db', () => ({
   pool: {
     connect: jest.fn(() => Promise.resolve({
-      query: jest.fn(() => Promise.resolve({})),
+      query: jest.fn(() => Promise.resolve({ rows: [{ id: 1 }] })),
       release: jest.fn(),
     })),
   },

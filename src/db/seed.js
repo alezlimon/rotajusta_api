@@ -29,7 +29,7 @@ const seedJornadas = [
     email: 'luis.employee@rotajusta.local',
     fecha: '2026-05-15',
     turnos: [
-      { hora_inicio: '08:00', hora_fin: '16:00', es_festivo: false },
+      { hora_inicio: '15:00', hora_fin: '17:00', es_festivo: false },
     ],
   },
   {
@@ -38,6 +38,21 @@ const seedJornadas = [
     turnos: [
       { hora_inicio: '10:00', hora_fin: '14:00', es_festivo: true },
       { hora_inicio: '17:00', hora_fin: '21:00', es_festivo: true },
+    ],
+  },
+  {
+    email: 'luis.employee@rotajusta.local',
+    fecha: '2026-05-17',
+    turnos: [
+      { hora_inicio: '22:00', hora_fin: '02:00', es_festivo: false },
+    ],
+  },
+  {
+    email: 'ana.employee@rotajusta.local',
+    fecha: '2026-05-18',
+    turnos: [
+      { hora_inicio: '08:00', hora_fin: '12:00', es_festivo: false },
+      { hora_inicio: '15:30', hora_fin: '19:30', es_festivo: false },
     ],
   },
 ];

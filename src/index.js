@@ -1,39 +1,11 @@
 // Punto de entrada del servidor Express.
-// Responsabilidad: configurar middlewares, montar rutas, iniciar servidor y orquestar graceful shutdown.
+// Responsabilidad: iniciar el servidor, configurar graceful shutdown y escuchar en el puerto.
 
 require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
+const { app } = require('./app');
 const { pool } = require('./config/db');
-const turnsRoutes = require('./routes/turnsRoutes');
 
-const app = express();
 const PORT = process.env.PORT || 3000;
-
-// --- Middlewares ---
-
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
-app.use(express.json());
-
-// --- Rutas ---
-
-app.use('/api/turnos', turnsRoutes);
-
-// --- Health check ---
-
-app.get('/health', (_, res) => res.status(200).json({ status: 'ok' }));
-
-// --- 404 ---
-
-app.use((_, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
-
-// --- Error handler (debe ser el último middleware) ---
-
-app.use((err, _, res, __) => {
-  const status = err.status || 500;
-  const message = err.message || 'Error interno del servidor';
-  res.status(status).json({ error: message });
-});
 
 // --- Graceful shutdown ---
 

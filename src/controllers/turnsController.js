@@ -80,4 +80,4 @@ const validateDailyJornada = async (req, res) => {
   }
 };
 
-module.exports = { validateDailyJornada };
+module.exports = { validateDailyJornada, runTransaction };

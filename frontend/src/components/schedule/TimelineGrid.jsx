@@ -13,9 +13,34 @@ const renderBlockPill = (assignment, blocks) => {
   )
 }
 
-export function TimelineGrid({ employees, days, blocks, plan, onPick, onDrop }) {
+const isHoveredCell = (hoverCell, employeeId, day) =>
+  hoverCell?.employeeId === employeeId && hoverCell?.day === day
+
+const getCellClassName = (isHovered, isAllowed, isDragging) => {
+  const base = 'min-h-16 border-l border-white/5 p-1 transition-colors'
+  if (!isDragging) return base
+  if (!isHovered) return `${base} cursor-grab`
+  return isAllowed
+    ? `${base} cursor-copy border-cyan-300/60 bg-cyan-400/10`
+    : `${base} cursor-not-allowed border-red-300/60 bg-red-400/10`
+}
+
+export function TimelineGrid({
+  employees,
+  days,
+  blocks,
+  plan,
+  picked,
+  hoverCell,
+  canDropTo,
+  onPick,
+  onDrop,
+  onHover,
+  onInvalidDrop,
+}) {
   const minWidth = `${days.length * SCHEDULE_CONFIG.DAY_CELL_WIDTH + 220}px`
   const template = `220px repeat(${days.length}, minmax(${SCHEDULE_CONFIG.DAY_CELL_WIDTH}px, 1fr))`
+  const isDragging = Boolean(picked)
 
   return (
     <section className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
@@ -38,8 +63,33 @@ export function TimelineGrid({ employees, days, blocks, plan, onPick, onDrop }) 
               </div>
               {days.map((day) => {
                 const assignment = plan[makeCellKey(employee.id, day)]
+                const dropState = canDropTo(employee.id, day)
+                const hovered = isHoveredCell(hoverCell, employee.id, day)
+                const cellClassName = getCellClassName(hovered, dropState.allowed, isDragging)
                 return (
-                  <div key={`${employee.id}-${day}`} onDragOver={(event) => event.preventDefault()} onDrop={() => onDrop(employee.id, day)} className="min-h-16 border-l border-white/5 p-1">
+                  <div
+                    key={`${employee.id}-${day}`}
+                    className={cellClassName}
+                    onDragLeave={() => onHover(null, null)}
+                    onDragOver={(event) => {
+                      onHover(employee.id, day)
+                      if (!dropState.allowed) {
+                        event.dataTransfer.dropEffect = 'none'
+                        return
+                      }
+                      event.preventDefault()
+                      event.dataTransfer.dropEffect = 'move'
+                    }}
+                    onDrop={(event) => {
+                      onHover(null, null)
+                      if (!dropState.allowed) {
+                        event.preventDefault()
+                        onInvalidDrop(dropState.reason)
+                        return
+                      }
+                      onDrop(employee.id, day)
+                    }}
+                  >
                     <div draggable={Boolean(assignment)} onDragStart={() => onPick(employee.id, day)}>
                       {renderBlockPill(assignment, blocks)}
                     </div>

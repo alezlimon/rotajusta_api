@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { logout } from '../services/authService'
 import { generateMonthlySchedule, getScheduleBootstrap, moveScheduleAssignment } from '../services/scheduleService'
 import { BlockConfigurator, GenerationToolbar, TimelineGrid, createBlockDraft, makeCellKey, toMonthLabel } from '../components'
+import { SCHEDULE_CONFIG } from '../constants/schedule'
 
 const parseNumber = (value, fallback) => {
   const parsed = Number(value)
@@ -22,6 +23,35 @@ const createMovePayload = (picked, employeeId, day) => ({
   to: { employeeId, day },
 })
 
+const toMinutes = (timeValue) => {
+  const [hours, minutes] = timeValue.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+const getBlockHours = (blocks, blockId) => {
+  const block = blocks.find((item) => item.id === blockId)
+  if (!block) return 0
+  const start = toMinutes(block.start)
+  const end = toMinutes(block.end)
+  const minutes = end > start ? end - start : 1440 - start + end
+  return minutes / 60
+}
+
+const validateDrop = ({ picked, target, plan, blocks }) => {
+  if (!picked) return { allowed: false, reason: 'Selecciona un turno para arrastrar' }
+  const fromKey = makeCellKey(picked.employeeId, picked.day)
+  const toKey = makeCellKey(target.employeeId, target.day)
+  if (fromKey === toKey) return { allowed: false, reason: 'El origen y destino son la misma celda' }
+  const source = plan[fromKey]
+  if (!source) return { allowed: false, reason: 'No hay turno en la celda de origen' }
+  if (plan[toKey]) return { allowed: false, reason: 'La celda destino ya tiene un turno asignado' }
+  const hours = getBlockHours(blocks, source.blockId)
+  if (hours > SCHEDULE_CONFIG.MAX_DAILY_HOURS) {
+    return { allowed: false, reason: `Supera el limite diario de ${SCHEDULE_CONFIG.MAX_DAILY_HOURS}h` }
+  }
+  return { allowed: true, reason: '' }
+}
+
 const applyMove = (currentPlan, from, to) => {
   const fromKey = makeCellKey(from.employeeId, from.day)
   const toKey = makeCellKey(to.employeeId, to.day)
@@ -40,6 +70,7 @@ export function ScheduleTimeline({ user, onLogout }) {
   const [days, setDays] = useState([])
   const [plan, setPlan] = useState({})
   const [picked, setPicked] = useState(null)
+  const [hoverCell, setHoverCell] = useState(null)
   const [error, setError] = useState('')
 
   const monthLabel = useMemo(() => toMonthLabel(year, month), [year, month])
@@ -85,15 +116,31 @@ export function ScheduleTimeline({ user, onLogout }) {
 
   const handlePick = (employeeId, day) => setPicked({ employeeId, day })
 
+  const canDropTo = (employeeId, day) =>
+    validateDrop({ picked, target: { employeeId, day }, plan, blocks })
+
+  const handleHover = (employeeId, day) => {
+    if (!employeeId || !day) return setHoverCell(null)
+    setHoverCell({ employeeId, day })
+  }
+
+  const handleInvalidDrop = (reason) => {
+    setError(reason || 'Movimiento no permitido')
+    setHoverCell(null)
+  }
+
   const handleDrop = async (employeeId, day) => {
     if (!picked) return
     const payload = createMovePayload(picked, employeeId, day)
+    const dropState = canDropTo(employeeId, day)
+    if (!dropState.allowed) return handleInvalidDrop(dropState.reason)
     const previousPlan = plan
     const optimisticPlan = applyMove(previousPlan, payload.from, payload.to)
     if (optimisticPlan === previousPlan) return
 
     setError('')
     setPlan(optimisticPlan)
+    setHoverCell(null)
     setPicked(null)
 
     try {
@@ -134,7 +181,19 @@ export function ScheduleTimeline({ user, onLogout }) {
           onGenerate={handleGenerate}
         />
 
-        <TimelineGrid employees={employees} days={days} blocks={blocks} plan={plan} onPick={handlePick} onDrop={handleDrop} />
+        <TimelineGrid
+          employees={employees}
+          days={days}
+          blocks={blocks}
+          plan={plan}
+          picked={picked}
+          hoverCell={hoverCell}
+          canDropTo={canDropTo}
+          onPick={handlePick}
+          onDrop={handleDrop}
+          onHover={handleHover}
+          onInvalidDrop={handleInvalidDrop}
+        />
       </section>
     </main>
   )

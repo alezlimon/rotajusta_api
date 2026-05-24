@@ -7,6 +7,7 @@ const SEMAPHORE_STYLES = {
 
 const OVERLOAD_STYLES = {
   OK: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200',
+  'Al Límite': 'border-amber-400/40 bg-amber-500/10 text-amber-200',
   'Horas Extra': 'border-amber-400/40 bg-amber-500/10 text-amber-200',
   Sobrecarga: 'border-rose-400/40 bg-rose-500/10 text-rose-200',
 }

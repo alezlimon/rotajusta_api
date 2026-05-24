@@ -51,6 +51,8 @@ const emptyAuditRow = (employee, totalDays) => ({
   monthlyOverload: false,
   weeklyOverload: false,
   overloadLabel: 'OK',
+  weeklyAtRisk: false,
+  monthlyAtRisk: false,
   weeklyHours: {},
 });
 
@@ -63,6 +65,9 @@ const pointsFromAssignment = (blockIndex, assignment, year, month) => {
   const date = toIsoDate(year, month, assignment.day);
   return Math.round(blockEffortPoints(block, date));
 };
+
+const monthlyWarningHours = () =>
+  Math.round(SCHEDULE_CONFIG.MONTHLY_HOURS_LIMIT * SCHEDULE_CONFIG.MONTHLY_WARNING_RATIO * 100) / 100;
 
 const hoursFromBlock = (block) => {
   if (!block) return 0;
@@ -77,14 +82,16 @@ const hoursFromBlock = (block) => {
 };
 
 const toOverloadLabel = (row) => {
-  if (row.weeklyOverload) return 'Sobrecarga';
-  if (row.monthlyOverload) return 'Horas Extra';
+  if (row.weeklyOverload || row.monthlyOverload) return 'Sobrecarga';
+  if (row.weeklyAtRisk || row.monthlyAtRisk) return 'Al Límite';
   return 'OK';
 };
 
 const applyOverloadFlags = (row) => {
-  row.weeklyOverload = row.peakWeeklyHours > SCHEDULE_CONFIG.WEEKLY_HOURS_LIMIT;
-  row.monthlyOverload = row.totalHours > SCHEDULE_CONFIG.MONTHLY_HOURS_LIMIT;
+  row.weeklyOverload = row.peakWeeklyHours >= SCHEDULE_CONFIG.WEEKLY_HOURS_LIMIT;
+  row.monthlyOverload = row.totalHours >= SCHEDULE_CONFIG.MONTHLY_HOURS_LIMIT;
+  row.weeklyAtRisk = row.peakWeeklyHours >= SCHEDULE_CONFIG.WEEKLY_WARNING_HOURS;
+  row.monthlyAtRisk = row.totalHours >= monthlyWarningHours();
   row.overloadLabel = toOverloadLabel(row);
 };
 
@@ -101,7 +108,10 @@ const fairnessFromDiff = (diff) => {
 const buildAuditLimits = () => ({
   fairnessHighMaxDiff: SCHEDULE_CONFIG.FAIRNESS_HIGH_MAX_DIFF,
   fairnessMediumMaxDiff: SCHEDULE_CONFIG.FAIRNESS_MEDIUM_MAX_DIFF,
+  softWeeklyHoursStart: SCHEDULE_CONFIG.SOFT_WEEKLY_HOURS_START,
+  weeklyWarningHours: SCHEDULE_CONFIG.WEEKLY_WARNING_HOURS,
   weeklyHoursLimit: SCHEDULE_CONFIG.WEEKLY_HOURS_LIMIT,
+  monthlyWarningHours: monthlyWarningHours(),
   monthlyHoursLimit: SCHEDULE_CONFIG.MONTHLY_HOURS_LIMIT,
 });
 
@@ -208,11 +218,18 @@ const canWorkInWeek = ({ stats, employeeId, weekKey, blockHours, weekDays }) => 
   return current.workedDays < maxWorkedDaysForWeek(weekDays);
 };
 
+const fatiguePenalty = (hours) => {
+  const softStart = SCHEDULE_CONFIG.SOFT_WEEKLY_HOURS_START;
+  if (hours <= softStart) return 0;
+  const extra = hours - softStart;
+  return Math.round(Math.pow(SCHEDULE_CONFIG.SOFT_WEEKLY_HOURS_GROWTH, extra) * 1000);
+};
+
 const byFairness = (stats, weekKey) => (a, b) => {
   const weekA = getWeekStats(stats, a.id, weekKey);
   const weekB = getWeekStats(stats, b.id, weekKey);
-  const scoreA = weekA.hours * 1000 + stats[a.id].points * 10 + weekA.workedDays;
-  const scoreB = weekB.hours * 1000 + stats[b.id].points * 10 + weekB.workedDays;
+  const scoreA = weekA.hours * 1000 + fatiguePenalty(weekA.hours) + stats[a.id].points * 10 + weekA.workedDays;
+  const scoreB = weekB.hours * 1000 + fatiguePenalty(weekB.hours) + stats[b.id].points * 10 + weekB.workedDays;
   if (scoreA !== scoreB) return scoreA - scoreB;
   return a.id - b.id;
 };

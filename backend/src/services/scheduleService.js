@@ -25,8 +25,137 @@ const toAssignmentsMap = (rows) =>
 const toIsoDate = (year, month, day) =>
   `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
+const toWeekKey = (year, month, day) => {
+  const date = new Date(year, month - 1, day);
+  const weekday = (date.getDay() + 6) % 7;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() - weekday);
+  return monday.toISOString().slice(0, 10);
+};
+
 const createStats = (employees) =>
   employees.reduce((acc, employee) => ({ ...acc, [employee.id]: { points: 0, worked: 0, lastNightDay: null } }), {});
+
+const toBlockIndex = (blocks) =>
+  blocks.reduce((acc, block) => ({ ...acc, [block.id]: block }), {});
+
+const emptyAuditRow = (employee, totalDays) => ({
+  employeeId: employee.id,
+  employeeName: employee.name,
+  totalPoints: 0,
+  workedDays: 0,
+  freeDays: totalDays,
+  nightShifts: 0,
+  totalHours: 0,
+  peakWeeklyHours: 0,
+  monthlyOverload: false,
+  weeklyOverload: false,
+  overloadLabel: 'OK',
+  weeklyHours: {},
+});
+
+const isNightAssignment = (blockIndex, assignment) =>
+  isNightBlock(blockIndex[assignment.blockId]);
+
+const pointsFromAssignment = (blockIndex, assignment, year, month) => {
+  const block = blockIndex[assignment.blockId];
+  if (!block) return 0;
+  const date = toIsoDate(year, month, assignment.day);
+  return Math.round(blockEffortPoints(block, date));
+};
+
+const hoursFromBlock = (block) => {
+  if (!block) return 0;
+  const toMinutes = (timeValue) => {
+    const [hours, minutes] = timeValue.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+  const start = toMinutes(block.start);
+  const end = toMinutes(block.end);
+  const minutes = end > start ? end - start : 1440 - start + end;
+  return minutes / 60;
+};
+
+const toOverloadLabel = (row) => {
+  if (row.weeklyOverload) return 'Sobrecarga';
+  if (row.monthlyOverload) return 'Horas Extra';
+  return 'OK';
+};
+
+const applyOverloadFlags = (row) => {
+  row.weeklyOverload = row.peakWeeklyHours > SCHEDULE_CONFIG.WEEKLY_HOURS_LIMIT;
+  row.monthlyOverload = row.totalHours > SCHEDULE_CONFIG.MONTHLY_HOURS_LIMIT;
+  row.overloadLabel = toOverloadLabel(row);
+};
+
+const fairnessFromDiff = (diff) => {
+  if (diff < SCHEDULE_CONFIG.FAIRNESS_HIGH_MAX_DIFF) {
+    return { fairnessLevel: 'high', fairnessLabel: 'Equidad Alta' };
+  }
+  if (diff <= SCHEDULE_CONFIG.FAIRNESS_MEDIUM_MAX_DIFF) {
+    return { fairnessLevel: 'medium', fairnessLabel: 'Equidad Media' };
+  }
+  return { fairnessLevel: 'low', fairnessLabel: 'Desequilibrio detectado' };
+};
+
+const buildAuditLimits = () => ({
+  fairnessHighMaxDiff: SCHEDULE_CONFIG.FAIRNESS_HIGH_MAX_DIFF,
+  fairnessMediumMaxDiff: SCHEDULE_CONFIG.FAIRNESS_MEDIUM_MAX_DIFF,
+  weeklyHoursLimit: SCHEDULE_CONFIG.WEEKLY_HOURS_LIMIT,
+  monthlyHoursLimit: SCHEDULE_CONFIG.MONTHLY_HOURS_LIMIT,
+});
+
+const buildAuditSummary = (rows) => {
+  if (rows.length < 2) {
+    return { dispersionPoints: 0, fairnessLevel: 'neutral', fairnessLabel: 'Sin datos suficientes', limits: buildAuditLimits() };
+  }
+  const points = rows.map((row) => row.totalPoints);
+  const dispersionPoints = Math.max(...points) - Math.min(...points);
+  return { dispersionPoints, ...fairnessFromDiff(dispersionPoints), limits: buildAuditLimits() };
+};
+
+const toAuditResponseRow = (row) => {
+  const { weeklyHours, ...rest } = row;
+  return rest;
+};
+
+const buildAudit = ({ employees, assignments, blocks, month, year, totalDays }) => {
+  const blockIndex = toBlockIndex(blocks);
+  const byEmployee = employees.reduce((acc, employee) => ({ ...acc, [employee.id]: emptyAuditRow(employee, totalDays) }), {});
+  for (const assignment of Object.values(assignments)) {
+    if (!assignment) continue;
+    const row = byEmployee[assignment.employeeId];
+    if (!row) continue;
+    const block = blockIndex[assignment.blockId];
+    const weekKey = toWeekKey(year, month, assignment.day);
+    const blockHours = hoursFromBlock(block);
+    row.totalPoints += pointsFromAssignment(blockIndex, assignment, year, month);
+    row.workedDays += 1;
+    row.freeDays = Math.max(0, totalDays - row.workedDays);
+    row.nightShifts += isNightAssignment(blockIndex, assignment) ? 1 : 0;
+    row.totalHours += blockHours;
+    row.weeklyHours[weekKey] = (row.weeklyHours[weekKey] || 0) + blockHours;
+    row.peakWeeklyHours = Math.max(row.peakWeeklyHours, row.weeklyHours[weekKey]);
+  }
+  const rows = Object.values(byEmployee)
+    .map((row) => ({ ...row, totalHours: Math.round(row.totalHours * 100) / 100, peakWeeklyHours: Math.round(row.peakWeeklyHours * 100) / 100 }))
+    .map((row) => {
+      applyOverloadFlags(row);
+      return toAuditResponseRow(row);
+    })
+    .sort((a, b) => a.totalPoints - b.totalPoints);
+  return { summary: buildAuditSummary(rows), byEmployee: rows };
+};
+
+const toSchedulePayload = ({ month, year, days, blocks, employees, assignments }) => ({
+  month,
+  year,
+  days,
+  blocks,
+  employees,
+  assignments,
+  audit: buildAudit({ employees, assignments, blocks, month, year, totalDays: days.length }),
+});
 
 const isNightBlock = (block) => {
   const name = (block.name || '').toLowerCase();
@@ -149,7 +278,8 @@ const getScheduleBootstrap = async ({ month, year, employees }) => {
   try {
     const blocks = await ensureBlocks(client, month, year);
     const assignments = await findAssignments(client, month, year);
-    return { month, year, days: getMonthDays(year, month), blocks, employees, assignments };
+    const days = getMonthDays(year, month);
+    return toSchedulePayload({ month, year, days, blocks, employees, assignments });
   } finally {
     client.release();
   }
@@ -167,7 +297,7 @@ const generateSchedule = async ({ month, year, employees, blocks }) => {
     const assignments = generateAutoPlan(employees, days, finalBlocks, month, year);
     await insertAssignments(client, month, year, assignments);
     await client.query('COMMIT');
-    return { month, year, days, blocks: finalBlocks, employees, assignments };
+    return toSchedulePayload({ month, year, days, blocks: finalBlocks, employees, assignments });
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

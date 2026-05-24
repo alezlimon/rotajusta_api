@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { logout } from '../services/authService'
 import { generateMonthlySchedule, getScheduleBootstrap, moveScheduleAssignment } from '../services/scheduleService'
-import { BlockConfigurator, GenerationToolbar, TimelineGrid, createBlockDraft, makeCellKey, toMonthLabel } from '../components'
+import { AuditPanel, BlockConfigurator, GenerationToolbar, TimelineGrid, createBlockDraft, makeCellKey, toMonthLabel } from '../components'
 import { SCHEDULE_CONFIG } from '../constants/schedule'
 
 const parseNumber = (value, fallback) => {
@@ -16,6 +16,7 @@ const toBootstrapState = (payload) => ({
   blocks: payload.blocks || [],
   days: payload.days || [],
   plan: payload.assignments || {},
+  audit: payload.audit || { summary: null, byEmployee: [] },
 })
 
 const createMovePayload = (picked, employeeId, day) => ({
@@ -133,6 +134,7 @@ export function ScheduleTimeline({ user, onLogout }) {
   const [blocks, setBlocks] = useState([])
   const [days, setDays] = useState([])
   const [plan, setPlan] = useState({})
+  const [audit, setAudit] = useState({ summary: null, byEmployee: [] })
   const [picked, setPicked] = useState(null)
   const [hoverCell, setHoverCell] = useState(null)
   const [hoverReason, setHoverReason] = useState('')
@@ -149,6 +151,7 @@ export function ScheduleTimeline({ user, onLogout }) {
         setBlocks(state.blocks)
         setDays(state.days)
         setPlan(state.plan)
+        setAudit(state.audit)
       } catch (currentError) {
         setError(currentError.message || 'No se pudo cargar el timeline')
       }
@@ -174,6 +177,7 @@ export function ScheduleTimeline({ user, onLogout }) {
       setBlocks(state.blocks)
       setDays(state.days)
       setPlan(state.plan)
+      setAudit(state.audit)
     } catch (currentError) {
       setError(currentError.message || 'No se pudo generar la rota')
     }
@@ -255,6 +259,8 @@ export function ScheduleTimeline({ user, onLogout }) {
           onYear={(value) => setYear(parseNumber(value, year))}
           onGenerate={handleGenerate}
         />
+
+        <AuditPanel audit={audit} />
 
         <TimelineGrid
           employees={employees}

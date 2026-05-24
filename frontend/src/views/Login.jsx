@@ -3,7 +3,7 @@ import { login } from '../services/authService'
 
 const initialForm = { email: '', password: '' }
 
-export function Login() {
+export function Login({ onLoginSuccess }) {
   const [form, setForm] = useState(initialForm)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
@@ -18,7 +18,8 @@ export function Login() {
     setIsLoading(true)
     setError('')
     try {
-      await login(form.email, form.password)
+      const data = await login(form.email, form.password)
+      onLoginSuccess?.(data.user)
     } catch (err) {
       setError(err.message || 'No se pudo iniciar sesion')
     } finally {

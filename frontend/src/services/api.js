@@ -1,5 +1,6 @@
 const API_BASE_URL = 'http://localhost:3000/api'
 const TOKEN_STORAGE_KEY = 'rotajusta_token'
+const AUTH_USER_KEY = 'rotajusta_user'
 
 const getToken = () => localStorage.getItem(TOKEN_STORAGE_KEY)
 
@@ -39,4 +40,4 @@ export const api = {
   del: (path, options) => apiRequest(path, { method: 'DELETE', ...options }),
 }
 
-export { API_BASE_URL, TOKEN_STORAGE_KEY }
+export { API_BASE_URL, TOKEN_STORAGE_KEY, AUTH_USER_KEY }

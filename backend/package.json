@@ -1,0 +1,30 @@
+{
+    "name": "rotajusta-api",
+    "version": "1.0.0",
+    "description": "La Rota Justa - Backend API REST para gestión de turnos en hostelería",
+    "main": "src/index.js",
+    "scripts": {
+        "start": "node src/index.js",
+        "dev": "node --watch src/index.js",
+        "test": "jest --verbose",
+        "migrate": "npm run migrate:up",
+        "migrate:up": "node-pg-migrate up -m src/db/migrations --envPath .env",
+        "migrate:down": "node-pg-migrate down -m src/db/migrations --envPath .env",
+        "db:seed": "node src/db/seed.js"
+    },
+    "dependencies": {
+        "bcrypt": "^6.0.0",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.5",
+        "express": "^4.19.2",
+        "jsonwebtoken": "^9.0.2",
+        "node-pg-migrate": "^8.0.4",
+        "pg": "^8.11.5",
+        "swagger-jsdoc": "^6.2.8",
+        "swagger-ui-express": "^5.0.1"
+    },
+    "devDependencies": {
+        "jest": "^29.7.0",
+        "supertest": "^7.2.2"
+    }
+}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { logout } from '../services/authService'
 import { generateMonthlySchedule, getScheduleBootstrap, moveScheduleAssignment } from '../services/scheduleService'
-import { AuditPanel, BlockConfigurator, GenerationToolbar, TimelineGrid, createBlockDraft, makeCellKey, toMonthLabel } from '../components'
+import { AuditPanel, BlockConfigurator, GenerationToolbar, StaffingAlertsPanel, TimelineGrid, createBlockDraft, makeCellKey, toMonthLabel } from '../components'
 import { SCHEDULE_CONFIG } from '../constants/schedule'
 
 const parseNumber = (value, fallback) => {
@@ -17,7 +17,17 @@ const toBootstrapState = (payload) => ({
   days: payload.days || [],
   plan: payload.assignments || {},
   audit: payload.audit || { summary: null, byEmployee: [] },
+  alerts: payload.alerts || [],
 })
+
+const applyScheduleState = (state, setters) => {
+  setters.setEmployees(state.employees)
+  setters.setBlocks(state.blocks)
+  setters.setDays(state.days)
+  setters.setPlan(state.plan)
+  setters.setAudit(state.audit)
+  setters.setAlerts(state.alerts)
+}
 
 const createMovePayload = (picked, employeeId, day) => ({
   from: { employeeId: picked.employeeId, day: picked.day },
@@ -135,6 +145,9 @@ export function ScheduleTimeline({ user, onLogout }) {
   const [days, setDays] = useState([])
   const [plan, setPlan] = useState({})
   const [audit, setAudit] = useState({ summary: null, byEmployee: [] })
+  const [alerts, setAlerts] = useState([])
+  const [analyticsOpen, setAnalyticsOpen] = useState(false)
+  const [analyticsDetailed, setAnalyticsDetailed] = useState(false)
   const [picked, setPicked] = useState(null)
   const [hoverCell, setHoverCell] = useState(null)
   const [hoverReason, setHoverReason] = useState('')
@@ -147,11 +160,7 @@ export function ScheduleTimeline({ user, onLogout }) {
       try {
         const payload = await getScheduleBootstrap({ month, year })
         const state = toBootstrapState(payload)
-        setEmployees(state.employees)
-        setBlocks(state.blocks)
-        setDays(state.days)
-        setPlan(state.plan)
-        setAudit(state.audit)
+        applyScheduleState(state, { setEmployees, setBlocks, setDays, setPlan, setAudit, setAlerts })
       } catch (currentError) {
         setError(currentError.message || 'No se pudo cargar el timeline')
       }
@@ -173,11 +182,7 @@ export function ScheduleTimeline({ user, onLogout }) {
     try {
       const payload = await generateMonthlySchedule({ month, year, blocks })
       const state = toBootstrapState(payload)
-      setEmployees(state.employees)
-      setBlocks(state.blocks)
-      setDays(state.days)
-      setPlan(state.plan)
-      setAudit(state.audit)
+      applyScheduleState(state, { setEmployees, setBlocks, setDays, setPlan, setAudit, setAlerts })
     } catch (currentError) {
       setError(currentError.message || 'No se pudo generar la rota')
     }
@@ -224,6 +229,9 @@ export function ScheduleTimeline({ user, onLogout }) {
 
     try {
       await moveScheduleAssignment({ month, year, ...payload, mode: dropState.mode })
+      const refreshed = await getScheduleBootstrap({ month, year })
+      const refreshedState = toBootstrapState(refreshed)
+      applyScheduleState(refreshedState, { setEmployees, setBlocks, setDays, setPlan, setAudit, setAlerts })
     } catch (currentError) {
       setPlan(previousPlan)
       setError(currentError.message || 'No se pudo guardar el movimiento')
@@ -235,9 +243,11 @@ export function ScheduleTimeline({ user, onLogout }) {
     onLogout?.()
   }
 
+  const closeAnalytics = () => setAnalyticsOpen(false)
+
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-8 text-slate-100">
-      <section className="mx-auto w-full max-w-7xl space-y-5 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-2xl backdrop-blur">
+      <section className="mx-auto w-full max-w-[1600px] space-y-5 rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-2xl backdrop-blur">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-cyan-300">La Rota Justa</p>
@@ -249,34 +259,87 @@ export function ScheduleTimeline({ user, onLogout }) {
 
         {error ? <p className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">{error}</p> : null}
 
-        <BlockConfigurator blocks={blocks} draft={draft} onDraftChange={handleDraftChange} onAdd={handleAddBlock} />
+        <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
+          <aside className="hidden lg:block">
+            <div className="sticky top-6 h-[calc(100vh-4rem)] space-y-4 overflow-y-auto pr-1">
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">Analitica</p>
+                <button
+                  type="button"
+                  onClick={() => setAnalyticsDetailed((current) => !current)}
+                  className="rounded-lg border border-white/20 px-2 py-1 text-xs text-slate-200"
+                >
+                  {analyticsDetailed ? 'Vista compacta' : 'Ver detalle'}
+                </button>
+              </div>
 
-        <GenerationToolbar
-          month={month}
-          year={year}
-          monthLabel={monthLabel}
-          onMonth={(value) => setMonth(parseNumber(value, month))}
-          onYear={(value) => setYear(parseNumber(value, year))}
-          onGenerate={handleGenerate}
-        />
+              <AuditPanel audit={audit} compact={!analyticsDetailed} />
+              <StaffingAlertsPanel alerts={alerts} compact={!analyticsDetailed} />
+            </div>
+          </aside>
 
-        <AuditPanel audit={audit} />
+          <div className="min-w-0 space-y-5">
+            <BlockConfigurator blocks={blocks} draft={draft} onDraftChange={handleDraftChange} onAdd={handleAddBlock} />
 
-        <TimelineGrid
-          employees={employees}
-          days={days}
-          blocks={blocks}
-          plan={plan}
-          picked={picked}
-          hoverCell={hoverCell}
-          canDropTo={canDropTo}
-          onPick={handlePick}
-          onDrop={handleDrop}
-          onHover={handleHover}
-          onInvalidDrop={handleInvalidDrop}
-          hoverReason={hoverReason}
-        />
+            <GenerationToolbar
+              month={month}
+              year={year}
+              monthLabel={monthLabel}
+              onMonth={(value) => setMonth(parseNumber(value, month))}
+              onYear={(value) => setYear(parseNumber(value, year))}
+              onGenerate={handleGenerate}
+            />
+
+            <TimelineGrid
+              employees={employees}
+              days={days}
+              blocks={blocks}
+              plan={plan}
+              picked={picked}
+              hoverCell={hoverCell}
+              canDropTo={canDropTo}
+              onPick={handlePick}
+              onDrop={handleDrop}
+              onHover={handleHover}
+              onInvalidDrop={handleInvalidDrop}
+              hoverReason={hoverReason}
+            />
+          </div>
+        </div>
       </section>
+
+      <button
+        type="button"
+        onClick={() => setAnalyticsOpen(true)}
+        className="fixed bottom-5 right-5 z-40 rounded-full border border-cyan-300/30 bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 shadow-xl lg:hidden"
+      >
+        Ver analiticas
+      </button>
+
+      {analyticsOpen ? (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 lg:hidden" onClick={closeAnalytics}>
+          <aside
+            className="absolute right-0 top-0 h-full w-[92vw] max-w-sm space-y-4 overflow-y-auto border-l border-white/10 bg-slate-900 p-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Analiticas</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAnalyticsDetailed((current) => !current)}
+                  className="rounded-lg border border-white/20 px-2 py-1 text-xs text-slate-200"
+                >
+                  {analyticsDetailed ? 'Compacta' : 'Detalle'}
+                </button>
+                <button type="button" onClick={closeAnalytics} className="rounded-lg border border-white/20 px-2 py-1 text-xs text-slate-200">Cerrar</button>
+              </div>
+            </div>
+            <AuditPanel audit={audit} compact={!analyticsDetailed} />
+            <StaffingAlertsPanel alerts={alerts} compact={!analyticsDetailed} />
+          </aside>
+        </div>
+      ) : null}
     </main>
   )
 }

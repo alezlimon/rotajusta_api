@@ -10,8 +10,8 @@ jest.mock('../config/db', () => ({
     query: jest.fn(() => Promise.resolve({
       rows: [{
         id: 1,
-        nombre: 'Clau Manager',
-        email: 'clau.manager@rotajusta.local',
+        nombre: 'Lucia',
+        email: 'lucia.manager@rotajusta.local',
         password_hash: mockHashedPassword,
         rol: 'MANAGER',
         saldo_puntos_actual: 120,
@@ -34,7 +34,7 @@ describe('POST /api/auth/login', () => {
 
   test('200: credenciales válidas devuelve token', async () => {
     const res = await request(app).post('/api/auth/login').send({
-      email: 'clau.manager@rotajusta.local',
+      email: 'lucia.manager@rotajusta.local',
       password: 'Password123!',
     });
 
@@ -62,7 +62,7 @@ describe('POST /api/auth/login', () => {
 
   test('401: contraseña incorrecta', async () => {
     const res = await request(app).post('/api/auth/login').send({
-      email: 'clau.manager@rotajusta.local',
+      email: 'lucia.manager@rotajusta.local',
       password: 'WrongPass123!',
     });
 
@@ -73,7 +73,7 @@ describe('POST /api/auth/login', () => {
   test('500: error de base de datos', async () => {
     pool.query.mockRejectedValueOnce(new Error('DB error'));
     const res = await request(app).post('/api/auth/login').send({
-      email: 'clau.manager@rotajusta.local',
+      email: 'lucia.manager@rotajusta.local',
       password: 'Password123!',
     });
 
@@ -84,7 +84,7 @@ describe('POST /api/auth/login', () => {
   test('200: perfil autenticado devuelve datos del manager', async () => {
     const token = generateToken({
       id: 1,
-      email: 'clau.manager@rotajusta.local',
+      email: 'lucia.manager@rotajusta.local',
       role: 'MANAGER',
     });
 
@@ -93,7 +93,7 @@ describe('POST /api/auth/login', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.user).toHaveProperty('email', 'clau.manager@rotajusta.local');
+    expect(res.body.user).toHaveProperty('email', 'lucia.manager@rotajusta.local');
     expect(res.body.user).toHaveProperty('saldo_puntos_actual');
   });
 
@@ -109,7 +109,7 @@ describe('POST /api/auth/login', () => {
 
     const token = generateToken({
       id: 1,
-      email: 'clau.manager@rotajusta.local',
+      email: 'lucia.manager@rotajusta.local',
       role: 'MANAGER',
     });
 

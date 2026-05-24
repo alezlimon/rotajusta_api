@@ -11,7 +11,7 @@ const DEFAULT_PASSWORD = 'Password123!';
 const SEED_SOURCE = 'seed';
 
 const seedUsers = [
-  { nombre: 'Clau Manager', email: 'clau.manager@rotajusta.local', rol: 'MANAGER' },
+  { nombre: 'Lucia', email: 'lucia.manager@rotajusta.local', rol: 'MANAGER' },
   { nombre: 'Ana Camarera', email: 'ana.employee@rotajusta.local', rol: 'EMPLOYEE' },
   { nombre: 'Luis Cocina', email: 'luis.employee@rotajusta.local', rol: 'EMPLOYEE' },
   { nombre: 'Carlos Camarero', email: 'carlos@rotajusta.local', rol: 'EMPLOYEE' },

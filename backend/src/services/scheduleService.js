@@ -34,7 +34,7 @@ const toWeekKey = (year, month, day) => {
 };
 
 const createStats = (employees) =>
-  employees.reduce((acc, employee) => ({ ...acc, [employee.id]: { points: 0, worked: 0, lastNightDay: null } }), {});
+  employees.reduce((acc, employee) => ({ ...acc, [employee.id]: { points: 0, worked: 0, lastNightDay: null, weeks: {} } }), {});
 
 const toBlockIndex = (blocks) =>
   blocks.reduce((acc, block) => ({ ...acc, [block.id]: block }), {});
@@ -147,15 +147,25 @@ const buildAudit = ({ employees, assignments, blocks, month, year, totalDays }) 
   return { summary: buildAuditSummary(rows), byEmployee: rows };
 };
 
-const toSchedulePayload = ({ month, year, days, blocks, employees, assignments }) => ({
-  month,
-  year,
-  days,
-  blocks,
-  employees,
-  assignments,
-  audit: buildAudit({ employees, assignments, blocks, month, year, totalDays: days.length }),
-});
+const addAuditOperationalSummary = (audit, alerts) => {
+  audit.summary.unassignedBlocks = alerts.length;
+  audit.summary.staffingStatus = alerts.length ? 'insufficient_staff' : 'ok';
+  return audit;
+};
+
+const toSchedulePayload = ({ month, year, days, blocks, employees, assignments, alerts = [] }) => {
+  const audit = buildAudit({ employees, assignments, blocks, month, year, totalDays: days.length });
+  return {
+    month,
+    year,
+    days,
+    blocks,
+    employees,
+    assignments,
+    alerts,
+    audit: addAuditOperationalSummary(audit, alerts),
+  };
+};
 
 const isNightBlock = (block) => {
   const name = (block.name || '').toLowerCase();
@@ -179,9 +189,30 @@ const blockEffortPoints = (block, date) =>
 
 const byEffortDesc = (date) => (a, b) => blockEffortPoints(b, date) - blockEffortPoints(a, date);
 
-const byFairness = (stats) => (a, b) => {
-  const scoreA = stats[a.id].points * 100 + stats[a.id].worked;
-  const scoreB = stats[b.id].points * 100 + stats[b.id].worked;
+const getWeekStats = (stats, employeeId, weekKey) => {
+  const employee = stats[employeeId];
+  if (!employee.weeks[weekKey]) {
+    employee.weeks[weekKey] = { hours: 0, workedDays: 0 };
+  }
+  return employee.weeks[weekKey];
+};
+
+const weekDaysMap = (days, month, year) =>
+  days.reduce((acc, day) => ({ ...acc, [toWeekKey(year, month, day)]: (acc[toWeekKey(year, month, day)] || 0) + 1 }), {});
+
+const maxWorkedDaysForWeek = (weekDays) => Math.max(0, weekDays - 2);
+
+const canWorkInWeek = ({ stats, employeeId, weekKey, blockHours, weekDays }) => {
+  const current = getWeekStats(stats, employeeId, weekKey);
+  if (current.hours + blockHours > SCHEDULE_CONFIG.WEEKLY_HOURS_LIMIT) return false;
+  return current.workedDays < maxWorkedDaysForWeek(weekDays);
+};
+
+const byFairness = (stats, weekKey) => (a, b) => {
+  const weekA = getWeekStats(stats, a.id, weekKey);
+  const weekB = getWeekStats(stats, b.id, weekKey);
+  const scoreA = weekA.hours * 1000 + stats[a.id].points * 10 + weekA.workedDays;
+  const scoreB = weekB.hours * 1000 + stats[b.id].points * 10 + weekB.workedDays;
   if (scoreA !== scoreB) return scoreA - scoreB;
   return a.id - b.id;
 };
@@ -189,41 +220,64 @@ const byFairness = (stats) => (a, b) => {
 const availableEmployees = (employees, assignedToday) =>
   employees.filter((employee) => !assignedToday.has(employee.id));
 
-const pickEmployee = (employees, stats, assignedToday, day, block) => {
-  const available = availableEmployees(employees, assignedToday).sort(byFairness(stats));
+const pickEmployee = ({ employees, stats, assignedToday, day, block, weekKey, weekDays }) => {
+  const blockHours = hoursFromBlock(block);
+  const available = availableEmployees(employees, assignedToday).sort(byFairness(stats, weekKey));
   const valid = available.filter((employee) => !violatesRestRule(stats, employee.id, day, block));
+  const constrained = valid.filter((employee) =>
+    canWorkInWeek({ stats, employeeId: employee.id, weekKey, blockHours, weekDays }));
+  if (constrained.length) return constrained[0];
   return (valid[0] || available[0] || null);
 };
 
-const applyAssignment = (plan, stats, assignment, date, block) => {
+const applyAssignment = (plan, stats, assignment, date, block, weekKey) => {
   const key = makeCellKey(assignment.employeeId, assignment.day);
   const points = blockEffortPoints(block, date);
+  const blockHours = hoursFromBlock(block);
+  const week = getWeekStats(stats, assignment.employeeId, weekKey);
   plan[key] = assignment;
   stats[assignment.employeeId].points += points;
   stats[assignment.employeeId].worked += 1;
+  week.hours += blockHours;
+  week.workedDays += 1;
   if (isNightBlock(block)) stats[assignment.employeeId].lastNightDay = assignment.day;
 };
 
-const assignDay = (plan, stats, employees, day, date, blocks) => {
+const unassignedAlert = (day, blockId, reason, weekKey) => ({ day, blockId, weekKey, reason });
+
+const assignDay = (plan, stats, employees, day, date, blocks, weekContext, alerts) => {
   const assignedToday = new Set();
+  const { weekKey, weekDays } = weekContext;
   const rankedBlocks = [...blocks].sort(byEffortDesc(date));
   for (const block of rankedBlocks) {
-    const employee = pickEmployee(employees, stats, assignedToday, day, block);
-    if (!employee) continue;
+    const employee = pickEmployee({ employees, stats, assignedToday, day, block, weekKey, weekDays });
+    if (!employee) {
+      alerts.push(unassignedAlert(day, block.id, 'NO_EMPLOYEE_AVAILABLE', weekKey));
+      continue;
+    }
+    const blockHours = hoursFromBlock(block);
+    const constrained = canWorkInWeek({ stats, employeeId: employee.id, weekKey, blockHours, weekDays });
+    if (!constrained) {
+      alerts.push(unassignedAlert(day, block.id, 'WEEKLY_CONSTRAINT', weekKey));
+      continue;
+    }
     const assignment = { employeeId: employee.id, day, blockId: block.id };
-    applyAssignment(plan, stats, assignment, date, block);
+    applyAssignment(plan, stats, assignment, date, block, weekKey);
     assignedToday.add(employee.id);
   }
 };
 
 const generateAutoPlan = (employees, days, blocks, month, year) => {
   const plan = {};
+  const alerts = [];
   const stats = createStats(employees);
+  const weeks = weekDaysMap(days, month, year);
   for (const day of days) {
     const date = toIsoDate(year, month, day);
-    assignDay(plan, stats, employees, day, date, blocks);
+    const weekKey = toWeekKey(year, month, day);
+    assignDay(plan, stats, employees, day, date, blocks, { weekKey, weekDays: weeks[weekKey] }, alerts);
   }
-  return plan;
+  return { plan, alerts };
 };
 
 const findBlocks = async (client, month, year) => {
@@ -279,7 +333,7 @@ const getScheduleBootstrap = async ({ month, year, employees }) => {
     const blocks = await ensureBlocks(client, month, year);
     const assignments = await findAssignments(client, month, year);
     const days = getMonthDays(year, month);
-    return toSchedulePayload({ month, year, days, blocks, employees, assignments });
+    return toSchedulePayload({ month, year, days, blocks, employees, assignments, alerts: [] });
   } finally {
     client.release();
   }
@@ -294,10 +348,10 @@ const generateSchedule = async ({ month, year, employees, blocks }) => {
     await clearAssignments(client, month, year);
     const finalBlocks = blocks.length ? blocks : [...SCHEDULE_CONFIG.DEFAULT_BLOCKS];
     await insertBlocks(client, month, year, finalBlocks);
-    const assignments = generateAutoPlan(employees, days, finalBlocks, month, year);
+    const { plan: assignments, alerts } = generateAutoPlan(employees, days, finalBlocks, month, year);
     await insertAssignments(client, month, year, assignments);
     await client.query('COMMIT');
-    return toSchedulePayload({ month, year, days, blocks: finalBlocks, employees, assignments });
+    return toSchedulePayload({ month, year, days, blocks: finalBlocks, employees, assignments, alerts });
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -365,4 +419,9 @@ const moveAssignment = async ({ month, year, from, to }) => {
   }
 };
 
-module.exports = { getScheduleBootstrap, generateSchedule, moveAssignment };
+module.exports = {
+  getScheduleBootstrap,
+  generateSchedule,
+  moveAssignment,
+  __testables: { generateAutoPlan, getMonthDays, toWeekKey, hoursFromBlock },
+};

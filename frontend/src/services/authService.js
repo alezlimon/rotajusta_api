@@ -30,4 +30,11 @@ export const getStoredUser = () => {
 
 export const getCurrentUser = () => api.get('/auth/me')
 
+export const refreshCurrentUser = async () => {
+  const data = await getCurrentUser()
+  const user = data?.user || null
+  if (user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
+  return user
+}
+
 export const getEmployees = () => api.get('/auth/employees')

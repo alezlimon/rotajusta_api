@@ -48,17 +48,65 @@ const toHours = (value) => (Number.isFinite(value) ? value.toFixed(1) : '0.0')
 
 const overloadClass = (label) => OVERLOAD_STYLES[label] || OVERLOAD_STYLES.OK
 
-export function AuditPanel({ audit }) {
+const sortByPointsDesc = (rows) =>
+  [...rows].sort((a, b) => {
+    if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints
+    return a.employeeName.localeCompare(b.employeeName)
+  })
+
+export function AuditPanel({ audit, compact = false }) {
   const normalized = normalizeAudit(audit)
   if (!normalized.byEmployee.length) return null
 
   const fairnessClass = SEMAPHORE_STYLES[normalized.summary.fairnessLevel] || SEMAPHORE_STYLES.neutral
   const limits = normalized.summary.limits || {}
+  const rows = sortByPointsDesc(normalized.byEmployee)
+  const topEmployee = rows[0]
+
+  if (compact) {
+    return (
+      <section className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-white">Auditoria</h2>
+          <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${fairnessClass}`}>
+            {normalized.summary.fairnessLabel}
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          <p className="rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-slate-200">Dispersion: {normalized.summary.dispersionPoints}</p>
+          <p className="rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-slate-200">Top: {topEmployee.totalPoints} pts</p>
+        </div>
+
+        <p className="mt-3 text-xs text-slate-300">
+          Mayor carga: <span className="font-semibold text-rose-200">{topEmployee.employeeName}</span>
+        </p>
+
+        <ul className="mt-3 space-y-1 text-xs text-slate-300">
+          {rows.slice(0, 3).map((row) => (
+            <li key={row.employeeId} className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-900/60 px-2 py-1">
+              <span>{row.employeeName}</span>
+              <span className="font-semibold text-cyan-200">{row.totalPoints} pts</span>
+            </li>
+          ))}
+        </ul>
+
+        <p className="mt-3 text-xs text-slate-400">
+          Umbrales: &lt;{limits.fairnessHighMaxDiff} / {limits.fairnessMediumMaxDiff} · {limits.weeklyHoursLimit}h semana
+        </p>
+      </section>
+    )
+  }
 
   return (
     <section className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
       <div className="flex items-end justify-between gap-3">
-        <h2 className="text-lg font-semibold text-white">Auditoria del generador</h2>
+        <div>
+          <h2 className="text-lg font-semibold text-white">Auditoria del generador</h2>
+          <p className="mt-1 text-xs text-slate-300">
+            Mayor carga: <span className="font-semibold text-rose-200">{topEmployee.employeeName}</span> con <span className="font-semibold text-rose-200">{topEmployee.totalPoints} pts</span>
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${fairnessClass}`}>
             {normalized.summary.fairnessLabel}
@@ -82,8 +130,8 @@ export function AuditPanel({ audit }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {normalized.byEmployee.map((row) => (
-              <tr key={row.employeeId} className="hover:bg-white/5">
+            {rows.map((row, index) => (
+              <tr key={row.employeeId} className={index === 0 ? 'bg-rose-500/10' : 'hover:bg-white/5'}>
                 <td className="px-4 py-3 font-medium text-white">{row.employeeName}</td>
                 <td className="px-4 py-3 text-cyan-200">{row.totalPoints}</td>
                 <td className="px-4 py-3">{row.workedDays}</td>

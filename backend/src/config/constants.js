@@ -29,4 +29,16 @@ const AUTH_CONFIG = Object.freeze({
   REQUIRED_ROLE_FOR_VALIDATION: 'MANAGER', // Solo managers pueden validar jornadas
 });
 
-module.exports = { POINTS_CONFIG, AUTH_CONFIG };
+const SCHEDULE_CONFIG = Object.freeze({
+  DEFAULT_BLOCKS: Object.freeze([
+    Object.freeze({ id: 'morning', name: 'Manana', start: '08:00', end: '16:00', color: 'bg-sky-400 text-slate-950' }),
+    Object.freeze({ id: 'afternoon', name: 'Tarde', start: '16:00', end: '00:00', color: 'bg-amber-400 text-slate-950' }),
+    Object.freeze({ id: 'night', name: 'Noche', start: '00:00', end: '08:00', color: 'bg-indigo-400 text-slate-950' }),
+  ]),
+  MIN_MONTH: 1,
+  MAX_MONTH: 12,
+  MIN_YEAR: 2024,
+  MAX_YEAR: 2099,
+});
+
+module.exports = { POINTS_CONFIG, AUTH_CONFIG, SCHEDULE_CONFIG };

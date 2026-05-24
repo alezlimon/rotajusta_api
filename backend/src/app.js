@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const swaggerUi = require('swagger-ui-express');
 const authRoutes = require('./routes/authRoutes');
+const scheduleRoutes = require('./routes/scheduleRoutes');
 const turnsRoutes = require('./routes/turnsRoutes');
 const { getBasicHealth, getReadinessProbe } = require('./services/healthService');
 const { swaggerDefinition } = require('./swagger/index');
@@ -19,6 +20,7 @@ app.use(express.json());
 // --- Rutas ---
 
 app.use('/api/auth', authRoutes);
+app.use('/api/schedule', scheduleRoutes);
 app.use('/api/turnos', turnsRoutes);
 
 // --- API Docs (solo en development — seguridad OWASP) ---

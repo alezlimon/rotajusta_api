@@ -16,6 +16,42 @@ const updateTurnoAt = (turnos, index, field, value) =>
 
 const removeTurnoAt = (turnos, index) => turnos.filter((_, currentIndex) => currentIndex !== index)
 
+const getDaySummaries = (result) => {
+  const summaries = (result.desglose?.turnos || []).reduce((acc, turno) => {
+    turno.bloques.forEach((bloque) => {
+      const current = acc[bloque.fecha] || {
+        fecha: bloque.fecha,
+        puntos: 0,
+        es_festivo: Boolean(bloque.es_festivo),
+        multiplicador_dia: bloque.multiplicador_dia,
+      }
+      current.puntos += bloque.franjas.reduce((sum, franja) => sum + franja.puntos, 0)
+      current.es_festivo = current.es_festivo || Boolean(bloque.es_festivo)
+      current.multiplicador_dia = bloque.multiplicador_dia
+      acc[bloque.fecha] = current
+    })
+    return acc
+  }, {})
+
+  return Object.values(summaries).sort((a, b) => a.fecha.localeCompare(b.fecha))
+}
+
+const getFranjaRows = (result) =>
+  (result.desglose?.turnos || []).flatMap((turno) =>
+    turno.bloques.flatMap((bloque) =>
+      bloque.franjas.map((franja) => ({
+        fecha: bloque.fecha,
+        hora_inicio: turno.hora_inicio,
+        hora_fin: turno.hora_fin,
+        franja: franja.franja,
+        horas: franja.horas,
+        multiplicador_franja: franja.multiplicador_franja,
+        multiplicador_dia: franja.multiplicador_dia,
+        puntos: franja.puntos,
+      }))
+    )
+  )
+
 export function Dashboard({ user, onLogout }) {
   const [profile, setProfile] = useState(user)
   const [error, setError] = useState('')
@@ -99,6 +135,9 @@ export function Dashboard({ user, onLogout }) {
     logout()
     onLogout?.()
   }
+
+  const daySummaries = result ? getDaySummaries(result) : []
+  const franjaRows = result ? getFranjaRows(result) : []
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
@@ -249,7 +288,7 @@ export function Dashboard({ user, onLogout }) {
 
           {result && (
             <div className="mt-4 grid gap-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 <p>Empleado: {result.empleado_id}</p>
                 <p>Fecha: {result.fecha}</p>
                 <p>Puntos: {result.puntos_calculados}</p>
@@ -258,42 +297,58 @@ export function Dashboard({ user, onLogout }) {
                 <p>Bonus: {result.desglose?.bonus_turno_partido || 0}</p>
               </div>
 
-              {result.desglose?.turnos?.length ? (
-                <div className="grid gap-3">
-                  <h3 className="text-base font-semibold text-white">Desglose por turno y franja</h3>
-                  {result.desglose.turnos.map((turno, index) => (
-                    <article key={`${turno.fecha}-${turno.hora_inicio}-${turno.hora_fin}-${index}`} className="rounded-xl border border-white/10 bg-slate-950/60 p-4 text-slate-100">
-                      <div className="flex flex-wrap gap-3 text-sm text-slate-300">
-                        <p>{turno.fecha}</p>
-                        <p>{turno.hora_inicio} - {turno.hora_fin}</p>
-                        <p>Puntos turno: {turno.puntos}</p>
-                      </div>
+              {daySummaries.length ? (
+                <section className="grid gap-3">
+                  <h3 className="text-base font-semibold text-white">Totales por día</h3>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {daySummaries.map((day) => (
+                      <article key={day.fecha} className="rounded-xl border border-white/10 bg-slate-950/70 p-4 text-slate-100">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-medium text-white">{day.fecha}</p>
+                          <p className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 text-xs uppercase tracking-[0.2em] text-cyan-200">
+                            x{day.multiplicador_dia}
+                          </p>
+                        </div>
+                        <p className="mt-3 text-3xl font-semibold text-emerald-300">{Math.round(day.puntos)}</p>
+                        <p className="mt-2 text-slate-300">{day.es_festivo ? 'Festivo' : 'Laborable'}</p>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
 
-                      <div className="mt-3 grid gap-2">
-                        {turno.bloques.map((bloque, blockIndex) => (
-                          <div key={`${bloque.fecha}-${blockIndex}`} className="rounded-lg border border-white/10 bg-slate-900/80 p-3">
-                            <div className="flex flex-wrap gap-3 text-xs uppercase tracking-[0.25em] text-cyan-200">
-                              <span>{bloque.fecha}</span>
-                              <span>{bloque.es_festivo ? 'Festivo' : 'Laborable'}</span>
-                              <span>Multiplicador día x{bloque.multiplicador_dia}</span>
-                            </div>
-
-                            <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                              {bloque.franjas.map((franja, slotIndex) => (
-                                <div key={`${franja.franja}-${slotIndex}`} className="rounded-lg border border-white/10 bg-slate-950 px-3 py-2">
-                                  <p className="font-medium text-white">{franja.franja}</p>
-                                  <p className="text-slate-300">Horas: {franja.horas}</p>
-                                  <p className="text-slate-300">Franja x{franja.multiplicador_franja}</p>
-                                  <p className="text-cyan-200">Puntos: {Math.round(franja.puntos)}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
+              {franjaRows.length ? (
+                <section className="grid gap-3">
+                  <h3 className="text-base font-semibold text-white">Tabla compacta de franjas</h3>
+                  <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-950/70">
+                    <table className="min-w-full divide-y divide-white/10 text-left text-sm text-slate-200">
+                      <thead className="bg-slate-900/90 text-xs uppercase tracking-[0.2em] text-slate-400">
+                        <tr>
+                          <th className="px-4 py-3">Fecha</th>
+                          <th className="px-4 py-3">Turno</th>
+                          <th className="px-4 py-3">Franja</th>
+                          <th className="px-4 py-3">Horas</th>
+                          <th className="px-4 py-3">x Franja</th>
+                          <th className="px-4 py-3">x Día</th>
+                          <th className="px-4 py-3">Puntos</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {franjaRows.map((row, index) => (
+                          <tr key={`${row.fecha}-${row.franja}-${index}`} className="hover:bg-white/5">
+                            <td className="px-4 py-3">{row.fecha}</td>
+                            <td className="px-4 py-3">{row.hora_inicio} - {row.hora_fin}</td>
+                            <td className="px-4 py-3">{row.franja}</td>
+                            <td className="px-4 py-3">{row.horas}</td>
+                            <td className="px-4 py-3">x{row.multiplicador_franja}</td>
+                            <td className="px-4 py-3">x{row.multiplicador_dia}</td>
+                            <td className="px-4 py-3 font-medium text-cyan-200">{Math.round(row.puntos)}</td>
+                          </tr>
                         ))}
-                      </div>
-                    </article>
-                  ))}
-                </div>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
               ) : null}
             </div>
           )}

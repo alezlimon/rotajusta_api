@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getStoredUser } from './services/authService'
 import { TOKEN_STORAGE_KEY } from './services/api'
-import { Dashboard, Login } from './views'
+import { Login, ScheduleTimeline } from './views'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -15,7 +15,7 @@ function App() {
   const handleLogout = () => setUser(null)
 
   return user ? (
-    <Dashboard user={user} onLogout={handleLogout} />
+    <ScheduleTimeline user={user} onLogout={handleLogout} />
   ) : (
     <Login onLoginSuccess={handleLoginSuccess} />
   )

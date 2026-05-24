@@ -1,5 +1,5 @@
 // Seed inicial idempotente para datos de prueba.
-// Crea 1 MANAGER, 2 EMPLOYEE y jornadas/turnos reales de ejemplo.
+// Crea 1 MANAGER, 6 EMPLOYEE y jornadas/turnos reales de ejemplo.
 
 require('dotenv').config();
 const bcrypt = require('bcrypt');
@@ -14,6 +14,10 @@ const seedUsers = [
   { nombre: 'Clau Manager', email: 'clau.manager@rotajusta.local', rol: 'MANAGER' },
   { nombre: 'Ana Camarera', email: 'ana.employee@rotajusta.local', rol: 'EMPLOYEE' },
   { nombre: 'Luis Cocina', email: 'luis.employee@rotajusta.local', rol: 'EMPLOYEE' },
+  { nombre: 'Carlos Camarero', email: 'carlos@rotajusta.local', rol: 'EMPLOYEE' },
+  { nombre: 'Maria Barra', email: 'maria@rotajusta.local', rol: 'EMPLOYEE' },
+  { nombre: 'Elena Chef', email: 'elena@rotajusta.local', rol: 'EMPLOYEE' },
+  { nombre: 'Jorge Pinche', email: 'jorge@rotajusta.local', rol: 'EMPLOYEE' },
 ];
 
 const seedJornadas = [
@@ -53,6 +57,63 @@ const seedJornadas = [
     turnos: [
       { hora_inicio: '08:00', hora_fin: '12:00', es_festivo: false },
       { hora_inicio: '15:30', hora_fin: '19:30', es_festivo: false },
+    ],
+  },
+  {
+    email: 'carlos@rotajusta.local',
+    fecha: '2026-05-19',
+    turnos: [
+      { hora_inicio: '08:00', hora_fin: '16:00', es_festivo: false },
+    ],
+  },
+  {
+    email: 'maria@rotajusta.local',
+    fecha: '2026-05-20',
+    turnos: [
+      { hora_inicio: '16:00', hora_fin: '00:00', es_festivo: false },
+    ],
+  },
+  {
+    email: 'elena@rotajusta.local',
+    fecha: '2026-05-21',
+    turnos: [
+      { hora_inicio: '00:00', hora_fin: '08:00', es_festivo: false },
+    ],
+  },
+  {
+    email: 'jorge@rotajusta.local',
+    fecha: '2026-05-22',
+    turnos: [
+      { hora_inicio: '10:00', hora_fin: '14:00', es_festivo: false },
+      { hora_inicio: '17:00', hora_fin: '21:00', es_festivo: false },
+    ],
+  },
+  {
+    email: 'carlos@rotajusta.local',
+    fecha: '2026-06-02',
+    turnos: [
+      { hora_inicio: '16:00', hora_fin: '00:00', es_festivo: false },
+    ],
+  },
+  {
+    email: 'maria@rotajusta.local',
+    fecha: '2026-06-03',
+    turnos: [
+      { hora_inicio: '08:00', hora_fin: '16:00', es_festivo: false },
+    ],
+  },
+  {
+    email: 'elena@rotajusta.local',
+    fecha: '2026-06-04',
+    turnos: [
+      { hora_inicio: '16:00', hora_fin: '00:00', es_festivo: false },
+    ],
+  },
+  {
+    email: 'jorge@rotajusta.local',
+    fecha: '2026-06-05',
+    turnos: [
+      { hora_inicio: '00:00', hora_fin: '08:00', es_festivo: false },
     ],
   },
 ];

@@ -1,5 +1,6 @@
 const { SCHEDULE_CONFIG } = require('../config/constants');
 const { pool } = require('../config/db');
+const { calcShiftPoints } = require('./pointsService');
 
 const getMonthDays = (year, month) => {
   const total = new Date(year, month, 0).getDate();
@@ -21,14 +22,80 @@ const toAssignmentPayload = (row) => ({ employeeId: row.employee_id, day: row.da
 const toAssignmentsMap = (rows) =>
   rows.reduce((acc, row) => ({ ...acc, [makeCellKey(row.employee_id, row.day_of_month)]: toAssignmentPayload(row) }), {});
 
-const createAutoPlan = (employees, days, blocks) =>
-  employees.reduce((acc, employee, rowIndex) => {
-    days.forEach((day) => {
-      const block = blocks[(day + rowIndex) % blocks.length];
-      acc[makeCellKey(employee.id, day)] = { employeeId: employee.id, day, blockId: block.id };
-    });
-    return acc;
-  }, {});
+const toIsoDate = (year, month, day) =>
+  `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+const createStats = (employees) =>
+  employees.reduce((acc, employee) => ({ ...acc, [employee.id]: { points: 0, worked: 0, lastNightDay: null } }), {});
+
+const isNightBlock = (block) => {
+  const name = (block.name || '').toLowerCase();
+  return name.includes('noche') || (block.start === '00:00' && block.end === '08:00');
+};
+
+const isMorningOrAfternoon = (block) => {
+  const name = (block.name || '').toLowerCase();
+  if (name.includes('manana') || name.includes('mañana') || name.includes('tarde')) return true;
+  return block.start !== '00:00' || block.end !== '08:00';
+};
+
+const violatesRestRule = (stats, employeeId, day, block) => {
+  const lastNightDay = stats[employeeId]?.lastNightDay;
+  if (lastNightDay !== day - 1) return false;
+  return isMorningOrAfternoon(block);
+};
+
+const blockEffortPoints = (block, date) =>
+  calcShiftPoints({ hora_inicio: block.start, hora_fin: block.end, fecha: date, es_festivo: false });
+
+const byEffortDesc = (date) => (a, b) => blockEffortPoints(b, date) - blockEffortPoints(a, date);
+
+const byFairness = (stats) => (a, b) => {
+  const scoreA = stats[a.id].points * 100 + stats[a.id].worked;
+  const scoreB = stats[b.id].points * 100 + stats[b.id].worked;
+  if (scoreA !== scoreB) return scoreA - scoreB;
+  return a.id - b.id;
+};
+
+const availableEmployees = (employees, assignedToday) =>
+  employees.filter((employee) => !assignedToday.has(employee.id));
+
+const pickEmployee = (employees, stats, assignedToday, day, block) => {
+  const available = availableEmployees(employees, assignedToday).sort(byFairness(stats));
+  const valid = available.filter((employee) => !violatesRestRule(stats, employee.id, day, block));
+  return (valid[0] || available[0] || null);
+};
+
+const applyAssignment = (plan, stats, assignment, date, block) => {
+  const key = makeCellKey(assignment.employeeId, assignment.day);
+  const points = blockEffortPoints(block, date);
+  plan[key] = assignment;
+  stats[assignment.employeeId].points += points;
+  stats[assignment.employeeId].worked += 1;
+  if (isNightBlock(block)) stats[assignment.employeeId].lastNightDay = assignment.day;
+};
+
+const assignDay = (plan, stats, employees, day, date, blocks) => {
+  const assignedToday = new Set();
+  const rankedBlocks = [...blocks].sort(byEffortDesc(date));
+  for (const block of rankedBlocks) {
+    const employee = pickEmployee(employees, stats, assignedToday, day, block);
+    if (!employee) continue;
+    const assignment = { employeeId: employee.id, day, blockId: block.id };
+    applyAssignment(plan, stats, assignment, date, block);
+    assignedToday.add(employee.id);
+  }
+};
+
+const generateAutoPlan = (employees, days, blocks, month, year) => {
+  const plan = {};
+  const stats = createStats(employees);
+  for (const day of days) {
+    const date = toIsoDate(year, month, day);
+    assignDay(plan, stats, employees, day, date, blocks);
+  }
+  return plan;
+};
 
 const findBlocks = async (client, month, year) => {
   const query = 'SELECT block_id, name, start_time, end_time, color FROM schedule_blocks WHERE year = $1 AND month = $2 ORDER BY id ASC';
@@ -97,7 +164,7 @@ const generateSchedule = async ({ month, year, employees, blocks }) => {
     await clearAssignments(client, month, year);
     const finalBlocks = blocks.length ? blocks : [...SCHEDULE_CONFIG.DEFAULT_BLOCKS];
     await insertBlocks(client, month, year, finalBlocks);
-    const assignments = createAutoPlan(employees, days, finalBlocks);
+    const assignments = generateAutoPlan(employees, days, finalBlocks, month, year);
     await insertAssignments(client, month, year, assignments);
     await client.query('COMMIT');
     return { month, year, days, blocks: finalBlocks, employees, assignments };
@@ -111,26 +178,55 @@ const generateSchedule = async ({ month, year, employees, blocks }) => {
 
 const findSourceAssignment = (client, month, year, from) =>
   client.query(
-    'SELECT block_id FROM schedule_assignments WHERE year = $1 AND month = $2 AND employee_id = $3 AND day_of_month = $4 LIMIT 1',
+    'SELECT id, block_id FROM schedule_assignments WHERE year = $1 AND month = $2 AND employee_id = $3 AND day_of_month = $4 LIMIT 1',
     [year, month, from.employeeId, from.day]
+  );
+
+const findTargetAssignment = (client, month, year, to) =>
+  client.query(
+    'SELECT id, block_id FROM schedule_assignments WHERE year = $1 AND month = $2 AND employee_id = $3 AND day_of_month = $4 LIMIT 1',
+    [year, month, to.employeeId, to.day]
+  );
+
+const deleteAssignmentById = (client, id) =>
+  client.query('DELETE FROM schedule_assignments WHERE id = $1', [id]);
+
+const updateAssignmentCell = (client, id, employeeId, day) =>
+  client.query(
+    'UPDATE schedule_assignments SET employee_id = $1, day_of_month = $2, updated_at = NOW() WHERE id = $3',
+    [employeeId, day, id]
+  );
+
+const insertAssignment = (client, month, year, employeeId, day, blockId) =>
+  client.query(
+    'INSERT INTO schedule_assignments (year, month, employee_id, day_of_month, block_id) VALUES ($1, $2, $3, $4, $5)',
+    [year, month, employeeId, day, blockId]
   );
 
 const moveAssignment = async ({ month, year, from, to }) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows } = await findSourceAssignment(client, month, year, from);
-    if (!rows[0]) {
+    const { rows: sourceRows } = await findSourceAssignment(client, month, year, from);
+    const source = sourceRows[0];
+    if (!source) {
       await client.query('ROLLBACK');
       return null;
     }
-    await client.query('DELETE FROM schedule_assignments WHERE year = $1 AND month = $2 AND employee_id = $3 AND day_of_month = $4', [year, month, to.employeeId, to.day]);
-    await client.query(
-      'UPDATE schedule_assignments SET employee_id = $1, day_of_month = $2, updated_at = NOW() WHERE year = $3 AND month = $4 AND employee_id = $5 AND day_of_month = $6',
-      [to.employeeId, to.day, year, month, from.employeeId, from.day]
-    );
+
+    const { rows: targetRows } = await findTargetAssignment(client, month, year, to);
+    const target = targetRows[0] || null;
+
+    if (!target) {
+      await updateAssignmentCell(client, source.id, to.employeeId, to.day);
+    } else {
+      await deleteAssignmentById(client, target.id);
+      await updateAssignmentCell(client, source.id, to.employeeId, to.day);
+      await insertAssignment(client, month, year, from.employeeId, from.day, target.block_id);
+    }
+
     await client.query('COMMIT');
-    return { employeeId: to.employeeId, day: to.day, blockId: rows[0].block_id };
+    return { employeeId: to.employeeId, day: to.day, blockId: source.block_id, mode: target ? 'swap' : 'move' };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

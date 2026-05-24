@@ -37,6 +37,7 @@ export function TimelineGrid({
   onDrop,
   onHover,
   onInvalidDrop,
+  hoverReason,
 }) {
   const minWidth = `${days.length * SCHEDULE_CONFIG.DAY_CELL_WIDTH + 220}px`
   const template = `220px repeat(${days.length}, minmax(${SCHEDULE_CONFIG.DAY_CELL_WIDTH}px, 1fr))`
@@ -69,7 +70,7 @@ export function TimelineGrid({
                 return (
                   <div
                     key={`${employee.id}-${day}`}
-                    className={cellClassName}
+                    className={`${cellClassName} relative`}
                     onDragLeave={() => onHover(null, null)}
                     onDragOver={(event) => {
                       onHover(employee.id, day)
@@ -93,6 +94,11 @@ export function TimelineGrid({
                     <div draggable={Boolean(assignment)} onDragStart={() => onPick(employee.id, day)}>
                       {renderBlockPill(assignment, blocks)}
                     </div>
+                    {isDragging && hovered && !dropState.allowed && hoverReason ? (
+                      <div className="pointer-events-none absolute left-1 top-1 z-40 max-w-[220px] rounded-lg border border-red-300/40 bg-slate-900/95 px-2 py-1 text-xs text-red-200 shadow-lg">
+                        {hoverReason}
+                      </div>
+                    ) : null}
                   </div>
                 )
               })}

@@ -37,6 +37,46 @@ const getBlockHours = (blocks, blockId) => {
   return minutes / 60
 }
 
+const validateHours = (blocks, assignment) =>
+  getBlockHours(blocks, assignment.blockId) <= SCHEDULE_CONFIG.MAX_DAILY_HOURS
+
+const getBlockById = (blocks, blockId) => blocks.find((item) => item.id === blockId)
+
+const isNightBlock = (block) => {
+  if (!block) return false
+  const byName = (block.name || '').toLowerCase().includes('noche')
+  const byTime = block.start === '00:00' && block.end === '08:00'
+  return byName || byTime
+}
+
+const isMorningOrAfternoonBlock = (block) => {
+  if (!block) return false
+  const name = (block.name || '').toLowerCase()
+  const byName = name.includes('manana') || name.includes('mañana') || name.includes('tarde')
+  const byTime = (block.start === '08:00' && block.end === '16:00') || (block.start === '16:00' && block.end === '00:00')
+  return byName || byTime
+}
+
+const getEmployeeAssignments = (plan, employeeId) =>
+  Object.values(plan)
+    .filter((assignment) => assignment && assignment.employeeId === employeeId)
+    .sort((a, b) => a.day - b.day)
+
+const validateRestByEmployee = (plan, employeeId, blocks) => {
+  const assignments = getEmployeeAssignments(plan, employeeId)
+  for (const current of assignments) {
+    const next = assignments.find((item) => item.day === current.day + 1)
+    if (!next) continue
+    const currentBlock = getBlockById(blocks, current.blockId)
+    const nextBlock = getBlockById(blocks, next.blockId)
+    if (isNightBlock(currentBlock) && isMorningOrAfternoonBlock(nextBlock)) return false
+  }
+  return true
+}
+
+const validateRestHook = ({ plan, blocks, employeeIds }) =>
+  employeeIds.every((employeeId) => validateRestByEmployee(plan, employeeId, blocks))
+
 const validateDrop = ({ picked, target, plan, blocks }) => {
   if (!picked) return { allowed: false, reason: 'Selecciona un turno para arrastrar' }
   const fromKey = makeCellKey(picked.employeeId, picked.day)
@@ -44,12 +84,23 @@ const validateDrop = ({ picked, target, plan, blocks }) => {
   if (fromKey === toKey) return { allowed: false, reason: 'El origen y destino son la misma celda' }
   const source = plan[fromKey]
   if (!source) return { allowed: false, reason: 'No hay turno en la celda de origen' }
-  if (plan[toKey]) return { allowed: false, reason: 'La celda destino ya tiene un turno asignado' }
-  const hours = getBlockHours(blocks, source.blockId)
-  if (hours > SCHEDULE_CONFIG.MAX_DAILY_HOURS) {
+  const targetAssignment = plan[toKey]
+  if (!validateHours(blocks, source)) {
     return { allowed: false, reason: `Supera el limite diario de ${SCHEDULE_CONFIG.MAX_DAILY_HOURS}h` }
   }
-  return { allowed: true, reason: '' }
+  if (targetAssignment && !validateHours(blocks, targetAssignment)) {
+    return { allowed: false, reason: `Supera el limite diario de ${SCHEDULE_CONFIG.MAX_DAILY_HOURS}h` }
+  }
+  const mode = targetAssignment ? 'swap' : 'move'
+  const nextPlan = mode === 'swap'
+    ? applySwap(plan, { employeeId: picked.employeeId, day: picked.day }, target)
+    : applyMove(plan, { employeeId: picked.employeeId, day: picked.day }, target)
+  const employeeIds = Array.from(new Set([picked.employeeId, target.employeeId]))
+  const restOk = validateRestHook({ plan: nextPlan, blocks, employeeIds })
+  if (!restOk) {
+    return { allowed: false, reason: 'Violación de descanso: Mínimo 12h tras Noche' }
+  }
+  return { allowed: true, reason: '', mode }
 }
 
 const applyMove = (currentPlan, from, to) => {
@@ -58,6 +109,19 @@ const applyMove = (currentPlan, from, to) => {
   const current = currentPlan[fromKey]
   if (!current || fromKey === toKey) return currentPlan
   return { ...currentPlan, [toKey]: { ...current, employeeId: to.employeeId, day: to.day }, [fromKey]: null }
+}
+
+const applySwap = (currentPlan, from, to) => {
+  const fromKey = makeCellKey(from.employeeId, from.day)
+  const toKey = makeCellKey(to.employeeId, to.day)
+  const source = currentPlan[fromKey]
+  const target = currentPlan[toKey]
+  if (!source || !target || fromKey === toKey) return currentPlan
+  return {
+    ...currentPlan,
+    [toKey]: { ...source, employeeId: to.employeeId, day: to.day },
+    [fromKey]: { ...target, employeeId: from.employeeId, day: from.day },
+  }
 }
 
 export function ScheduleTimeline({ user, onLogout }) {
@@ -71,6 +135,7 @@ export function ScheduleTimeline({ user, onLogout }) {
   const [plan, setPlan] = useState({})
   const [picked, setPicked] = useState(null)
   const [hoverCell, setHoverCell] = useState(null)
+  const [hoverReason, setHoverReason] = useState('')
   const [error, setError] = useState('')
 
   const monthLabel = useMemo(() => toMonthLabel(year, month), [year, month])
@@ -120,13 +185,20 @@ export function ScheduleTimeline({ user, onLogout }) {
     validateDrop({ picked, target: { employeeId, day }, plan, blocks })
 
   const handleHover = (employeeId, day) => {
-    if (!employeeId || !day) return setHoverCell(null)
+    if (!employeeId || !day) {
+      setHoverCell(null)
+      setHoverReason('')
+      return
+    }
+    const dropState = canDropTo(employeeId, day)
     setHoverCell({ employeeId, day })
+    setHoverReason(dropState.allowed ? '' : dropState.reason)
   }
 
   const handleInvalidDrop = (reason) => {
     setError(reason || 'Movimiento no permitido')
     setHoverCell(null)
+    setHoverReason('')
   }
 
   const handleDrop = async (employeeId, day) => {
@@ -135,16 +207,19 @@ export function ScheduleTimeline({ user, onLogout }) {
     const dropState = canDropTo(employeeId, day)
     if (!dropState.allowed) return handleInvalidDrop(dropState.reason)
     const previousPlan = plan
-    const optimisticPlan = applyMove(previousPlan, payload.from, payload.to)
+    const optimisticPlan = dropState.mode === 'swap'
+      ? applySwap(previousPlan, payload.from, payload.to)
+      : applyMove(previousPlan, payload.from, payload.to)
     if (optimisticPlan === previousPlan) return
 
     setError('')
     setPlan(optimisticPlan)
     setHoverCell(null)
+    setHoverReason('')
     setPicked(null)
 
     try {
-      await moveScheduleAssignment({ month, year, ...payload })
+      await moveScheduleAssignment({ month, year, ...payload, mode: dropState.mode })
     } catch (currentError) {
       setPlan(previousPlan)
       setError(currentError.message || 'No se pudo guardar el movimiento')
@@ -193,6 +268,7 @@ export function ScheduleTimeline({ user, onLogout }) {
           onDrop={handleDrop}
           onHover={handleHover}
           onInvalidDrop={handleInvalidDrop}
+          hoverReason={hoverReason}
         />
       </section>
     </main>

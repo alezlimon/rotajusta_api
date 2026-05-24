@@ -22,6 +22,14 @@ const createMovePayload = (picked, employeeId, day) => ({
   to: { employeeId, day },
 })
 
+const applyMove = (currentPlan, from, to) => {
+  const fromKey = makeCellKey(from.employeeId, from.day)
+  const toKey = makeCellKey(to.employeeId, to.day)
+  const current = currentPlan[fromKey]
+  if (!current || fromKey === toKey) return currentPlan
+  return { ...currentPlan, [toKey]: { ...current, employeeId: to.employeeId, day: to.day }, [fromKey]: null }
+}
+
 export function ScheduleTimeline({ user, onLogout }) {
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -79,14 +87,19 @@ export function ScheduleTimeline({ user, onLogout }) {
 
   const handleDrop = async (employeeId, day) => {
     if (!picked) return
+    const payload = createMovePayload(picked, employeeId, day)
+    const previousPlan = plan
+    const optimisticPlan = applyMove(previousPlan, payload.from, payload.to)
+    if (optimisticPlan === previousPlan) return
+
+    setError('')
+    setPlan(optimisticPlan)
+    setPicked(null)
+
     try {
-      const payload = createMovePayload(picked, employeeId, day)
       await moveScheduleAssignment({ month, year, ...payload })
-      const fromKey = makeCellKey(picked.employeeId, picked.day)
-      const toKey = makeCellKey(employeeId, day)
-      setPlan((current) => ({ ...current, [toKey]: { ...current[fromKey], employeeId, day }, [fromKey]: null }))
-      setPicked(null)
     } catch (currentError) {
+      setPlan(previousPlan)
       setError(currentError.message || 'No se pudo guardar el movimiento')
     }
   }

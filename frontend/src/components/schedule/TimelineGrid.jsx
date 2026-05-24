@@ -25,13 +25,17 @@ export function TimelineGrid({ employees, days, blocks, plan, onPick, onDrop }) 
       <div className="mt-4 overflow-x-auto">
         <div style={{ minWidth }}>
           <div className="grid border-b border-white/10" style={{ gridTemplateColumns: template }}>
-            <div className="px-3 py-2 text-xs uppercase tracking-[0.2em] text-slate-400">{SCHEDULE_CONFIG.TEAM_NAME}</div>
+            <div className="sticky left-0 z-30 border-r border-white/10 bg-slate-900 px-3 py-2 text-xs uppercase tracking-[0.2em] text-slate-300">
+              {SCHEDULE_CONFIG.TEAM_NAME}
+            </div>
             {days.map((day) => <div key={`head-${day}`} className="px-2 py-2 text-center text-xs font-semibold text-cyan-200">{day}</div>)}
           </div>
 
           {employees.map((employee) => (
             <div key={employee.id} className="grid border-b border-white/5" style={{ gridTemplateColumns: template }}>
-              <div className="px-3 py-3 text-sm font-medium text-white">{employee.name}</div>
+              <div className="sticky left-0 z-20 border-r border-white/10 bg-slate-900 px-3 py-3 text-sm font-medium text-white shadow-[6px_0_14px_rgba(2,6,23,0.35)]">
+                {employee.name}
+              </div>
               {days.map((day) => {
                 const assignment = plan[makeCellKey(employee.id, day)]
                 return (

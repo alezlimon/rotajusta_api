@@ -33,6 +33,72 @@ const toWeekKey = (year, month, day) => {
   return monday.toISOString().slice(0, 10);
 };
 
+const toDayKey = (employeeId, day) => `${employeeId}-${day}`;
+
+const weekIndexMap = (days, month, year) => {
+  const map = {};
+  let index = 0;
+  for (const day of days) {
+    const key = toWeekKey(year, month, day);
+    if (map[key] === undefined) {
+      map[key] = index;
+      index += 1;
+    }
+  }
+  return map;
+};
+
+const weekDaysMapDetailed = (days, month, year) => {
+  const byWeek = {};
+  for (const day of days) {
+    const key = toWeekKey(year, month, day);
+    byWeek[key] = [...(byWeek[key] || []), day];
+  }
+  return byWeek;
+};
+
+const weekdayWeight = (year, month, day) => {
+  const value = new Date(year, month - 1, day).getDay();
+  const weights = [4, 0, 0, 1, 2, 4, 5];
+  return weights[value] ?? 3;
+};
+
+const restPairs = (weekDays) => {
+  if (weekDays.length < 2) return [weekDays];
+  return weekDays.slice(0, -1).map((_, index) => [weekDays[index], weekDays[index + 1]]);
+};
+
+const pairScore = ({ pair, dayLoad, year, month, seed }) => {
+  const [a, b] = pair;
+  const load = (dayLoad[a] || 0) + (dayLoad[b] || 0);
+  const weight = weekdayWeight(year, month, a) + weekdayWeight(year, month, b);
+  return load * 100 + weight * 10 + ((a + b + seed) % 7);
+};
+
+const pickRestPair = ({ pairs, dayLoad, year, month, seed }) =>
+  [...pairs].sort((a, b) => pairScore({ pair: a, dayLoad, year, month, seed }) - pairScore({ pair: b, dayLoad, year, month, seed }))[0];
+
+const buildRestPlan = (employees, days, month, year) => {
+  const plan = {};
+  const dayLoad = {};
+  const byWeek = weekDaysMapDetailed(days, month, year);
+  const indexes = weekIndexMap(days, month, year);
+  for (const [weekKey, weekDays] of Object.entries(byWeek)) {
+    const pairs = restPairs(weekDays);
+    const weekSeed = indexes[weekKey] || 0;
+    employees.forEach((employee, index) => {
+      const pair = pickRestPair({ pairs, dayLoad, year, month, seed: weekSeed + index });
+      for (const day of pair) {
+        plan[toDayKey(employee.id, day)] = true;
+        dayLoad[day] = (dayLoad[day] || 0) + 1;
+      }
+    });
+  }
+  return plan;
+};
+
+const isPlannedRestDay = (restPlan, employeeId, day) => Boolean(restPlan[toDayKey(employeeId, day)]);
+
 const createStats = (employees) =>
   employees.reduce((acc, employee) => ({ ...acc, [employee.id]: { points: 0, worked: 0, lastNightDay: null, weeks: {} } }), {});
 
@@ -157,13 +223,65 @@ const buildAudit = ({ employees, assignments, blocks, month, year, totalDays }) 
   return { summary: buildAuditSummary(rows), byEmployee: rows };
 };
 
-const addAuditOperationalSummary = (audit, alerts) => {
+const toWorkedDaysByWeek = (employees, assignments, month, year) => {
+  const base = {};
+  employees.forEach((employee) => { base[employee.id] = {}; });
+  for (const assignment of Object.values(assignments)) {
+    if (!assignment) continue;
+    const weekKey = toWeekKey(year, month, assignment.day);
+    const employeeWeeks = base[assignment.employeeId] || {};
+    employeeWeeks[weekKey] = [...(employeeWeeks[weekKey] || []), assignment.day];
+    base[assignment.employeeId] = employeeWeeks;
+  }
+  return base;
+};
+
+const hasConsecutivePair = (days) =>
+  [...new Set(days)].sort((a, b) => a - b).slice(0, -1).some((day, index, arr) => arr[index + 1] - day === 1);
+
+const freeDaysForWeek = (weekDays, workedDays) =>
+  weekDays.filter((day) => !new Set(workedDays).has(day));
+
+const addReasonCount = (map, reason, amount = 1) => ({ ...map, [reason]: (map[reason] || 0) + amount });
+
+const realismSummary = ({ employees, assignments, days, month, year, alerts, restPlan }) => {
+  const byWeek = weekDaysMapDetailed(days, month, year);
+  const worked = toWorkedDaysByWeek(employees, assignments, month, year);
+  let fullWeekSlots = 0;
+  let respected = 0;
+  let fallback6x1 = 0;
+  let plannedRestOverrides = 0;
+  let reasons = {};
+  for (const [weekKey, weekDays] of Object.entries(byWeek)) {
+    if (weekDays.length < 7) continue;
+    for (const employee of employees) {
+      fullWeekSlots += 1;
+      const workedDays = worked[employee.id]?.[weekKey] || [];
+      const freeDays = freeDaysForWeek(weekDays, workedDays);
+      const is6x1 = workedDays.length === 6;
+      const ideal = workedDays.length <= 5 && freeDays.length >= 2 && hasConsecutivePair(freeDays);
+      if (ideal) respected += 1;
+      if (is6x1) fallback6x1 += 1;
+      const overrides = workedDays.filter((day) => isPlannedRestDay(restPlan, employee.id, day)).length;
+      plannedRestOverrides += overrides;
+    }
+  }
+  reasons = alerts.reduce((acc, alert) => addReasonCount(acc, alert.reason), reasons);
+  if (fallback6x1) reasons = addReasonCount(reasons, 'FALLBACK_6X1', fallback6x1);
+  if (plannedRestOverrides) reasons = addReasonCount(reasons, 'PLANNED_REST_OVERRIDE', plannedRestOverrides);
+  return { fullWeekSlots, preferredBreaksRespected: respected, fallback6x1Count: fallback6x1, plannedRestOverrides, fallbackReasons: reasons };
+};
+
+const addAuditOperationalSummary = (audit, alerts, realism) => {
   audit.summary.unassignedBlocks = alerts.length;
   audit.summary.staffingStatus = alerts.length ? 'insufficient_staff' : 'ok';
+  audit.summary.realism = realism;
   return audit;
 };
 
 const toSchedulePayload = ({ month, year, days, blocks, employees, assignments, alerts = [] }) => {
+  const restPlan = buildRestPlan(employees, days, month, year);
+  const realism = realismSummary({ employees, assignments, days, month, year, alerts, restPlan });
   const audit = buildAudit({ employees, assignments, blocks, month, year, totalDays: days.length });
   return {
     month,
@@ -173,7 +291,7 @@ const toSchedulePayload = ({ month, year, days, blocks, employees, assignments, 
     employees,
     assignments,
     alerts,
-    audit: addAuditOperationalSummary(audit, alerts),
+    audit: addAuditOperationalSummary(audit, alerts, realism),
   };
 };
 
@@ -210,12 +328,17 @@ const getWeekStats = (stats, employeeId, weekKey) => {
 const weekDaysMap = (days, month, year) =>
   days.reduce((acc, day) => ({ ...acc, [toWeekKey(year, month, day)]: (acc[toWeekKey(year, month, day)] || 0) + 1 }), {});
 
-const maxWorkedDaysForWeek = (weekDays) => Math.max(0, weekDays - 2);
+const maxWorkedDaysForWeek = (weekDays, minFreeDays) => Math.max(0, weekDays - minFreeDays);
 
-const canWorkInWeek = ({ stats, employeeId, weekKey, blockHours, weekDays }) => {
+const canWorkWeeklyHours = ({ stats, employeeId, weekKey, blockHours }) => {
   const current = getWeekStats(stats, employeeId, weekKey);
   if (current.hours + blockHours > SCHEDULE_CONFIG.WEEKLY_HOURS_LIMIT) return false;
-  return current.workedDays < maxWorkedDaysForWeek(weekDays);
+  return true;
+};
+
+const canWorkWeeklyDays = ({ stats, employeeId, weekKey, weekDays, minFreeDays }) => {
+  const current = getWeekStats(stats, employeeId, weekKey);
+  return current.workedDays < maxWorkedDaysForWeek(weekDays, minFreeDays);
 };
 
 const fatiguePenalty = (hours) => {
@@ -237,14 +360,49 @@ const byFairness = (stats, weekKey) => (a, b) => {
 const availableEmployees = (employees, assignedToday) =>
   employees.filter((employee) => !assignedToday.has(employee.id));
 
-const pickEmployee = ({ employees, stats, assignedToday, day, block, weekKey, weekDays }) => {
+const withWeeklyCapacity = ({ stats, candidates, weekKey, blockHours, weekDays, minFreeDays }) =>
+  candidates.filter((employee) => {
+    if (!canWorkWeeklyHours({ stats, employeeId: employee.id, weekKey, blockHours })) return false;
+    return canWorkWeeklyDays({ stats, employeeId: employee.id, weekKey, weekDays, minFreeDays });
+  });
+
+const withoutPlannedRest = ({ candidates, restPlan, day }) =>
+  candidates.filter((employee) => !isPlannedRestDay(restPlan, employee.id, day));
+
+const pickBest = ({ candidates, stats, weekKey }) =>
+  candidates.length ? [...candidates].sort(byFairness(stats, weekKey))[0] : null;
+
+const pickEmployee = ({ employees, stats, assignedToday, day, block, weekKey, weekDays, restPlan }) => {
   const blockHours = hoursFromBlock(block);
-  const available = availableEmployees(employees, assignedToday).sort(byFairness(stats, weekKey));
+  const available = availableEmployees(employees, assignedToday);
   const valid = available.filter((employee) => !violatesRestRule(stats, employee.id, day, block));
-  const constrained = valid.filter((employee) =>
-    canWorkInWeek({ stats, employeeId: employee.id, weekKey, blockHours, weekDays }));
-  if (constrained.length) return constrained[0];
-  return (valid[0] || available[0] || null);
+  const strict = withWeeklyCapacity({
+    stats,
+    candidates: withoutPlannedRest({ candidates: valid, restPlan, day }),
+    weekKey,
+    blockHours,
+    weekDays,
+    minFreeDays: SCHEDULE_CONFIG.PREFERRED_FREE_DAYS_PER_WEEK,
+  });
+  const relaxed = withWeeklyCapacity({
+    stats,
+    candidates: withoutPlannedRest({ candidates: valid, restPlan, day }),
+    weekKey,
+    blockHours,
+    weekDays,
+    minFreeDays: SCHEDULE_CONFIG.HARD_MIN_FREE_DAYS_PER_WEEK,
+  });
+  const emergency = withWeeklyCapacity({
+    stats,
+    candidates: valid,
+    weekKey,
+    blockHours,
+    weekDays,
+    minFreeDays: SCHEDULE_CONFIG.HARD_MIN_FREE_DAYS_PER_WEEK,
+  });
+  return pickBest({ candidates: strict, stats, weekKey })
+    || pickBest({ candidates: relaxed, stats, weekKey })
+    || pickBest({ candidates: emergency, stats, weekKey });
 };
 
 const applyAssignment = (plan, stats, assignment, date, block, weekKey) => {
@@ -262,18 +420,25 @@ const applyAssignment = (plan, stats, assignment, date, block, weekKey) => {
 
 const unassignedAlert = (day, blockId, reason, weekKey) => ({ day, blockId, weekKey, reason });
 
-const assignDay = (plan, stats, employees, day, date, blocks, weekContext, alerts) => {
+const assignDay = (plan, stats, employees, day, date, blocks, weekContext, alerts, restPlan) => {
   const assignedToday = new Set();
   const { weekKey, weekDays } = weekContext;
   const rankedBlocks = [...blocks].sort(byEffortDesc(date));
   for (const block of rankedBlocks) {
-    const employee = pickEmployee({ employees, stats, assignedToday, day, block, weekKey, weekDays });
+    const employee = pickEmployee({ employees, stats, assignedToday, day, block, weekKey, weekDays, restPlan });
     if (!employee) {
       alerts.push(unassignedAlert(day, block.id, 'NO_EMPLOYEE_AVAILABLE', weekKey));
       continue;
     }
     const blockHours = hoursFromBlock(block);
-    const constrained = canWorkInWeek({ stats, employeeId: employee.id, weekKey, blockHours, weekDays });
+    const constrained = canWorkWeeklyHours({ stats, employeeId: employee.id, weekKey, blockHours })
+      && canWorkWeeklyDays({
+        stats,
+        employeeId: employee.id,
+        weekKey,
+        weekDays,
+        minFreeDays: SCHEDULE_CONFIG.HARD_MIN_FREE_DAYS_PER_WEEK,
+      });
     if (!constrained) {
       alerts.push(unassignedAlert(day, block.id, 'WEEKLY_CONSTRAINT', weekKey));
       continue;
@@ -289,10 +454,11 @@ const generateAutoPlan = (employees, days, blocks, month, year) => {
   const alerts = [];
   const stats = createStats(employees);
   const weeks = weekDaysMap(days, month, year);
+  const restPlan = buildRestPlan(employees, days, month, year);
   for (const day of days) {
     const date = toIsoDate(year, month, day);
     const weekKey = toWeekKey(year, month, day);
-    assignDay(plan, stats, employees, day, date, blocks, { weekKey, weekDays: weeks[weekKey] }, alerts);
+    assignDay(plan, stats, employees, day, date, blocks, { weekKey, weekDays: weeks[weekKey] }, alerts, restPlan);
   }
   return { plan, alerts };
 };
@@ -440,5 +606,13 @@ module.exports = {
   getScheduleBootstrap,
   generateSchedule,
   moveAssignment,
-  __testables: { generateAutoPlan, getMonthDays, toWeekKey, hoursFromBlock },
+  __testables: {
+    generateAutoPlan,
+    getMonthDays,
+    toWeekKey,
+    hoursFromBlock,
+    buildRestPlan,
+    weekDaysMapDetailed,
+    realismSummary,
+  },
 };

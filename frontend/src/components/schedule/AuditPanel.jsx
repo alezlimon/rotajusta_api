@@ -55,12 +55,28 @@ const sortByPointsDesc = (rows) =>
     return a.employeeName.localeCompare(b.employeeName)
   })
 
+const fallbackLabel = (reason) => {
+  if (reason === 'WEEKLY_CONSTRAINT') return 'Límite semanal'
+  if (reason === 'NO_EMPLOYEE_AVAILABLE') return 'Sin personal'
+  if (reason === 'FALLBACK_6X1') return 'Semana 6+1'
+  if (reason === 'PLANNED_REST_OVERRIDE') return 'Rompió libranza planificada'
+  return reason
+}
+
+const toReasonEntries = (realism) =>
+  Object.entries(realism?.fallbackReasons || {}).sort((a, b) => b[1] - a[1])
+
 export function AuditPanel({ audit, compact = false }) {
   const normalized = normalizeAudit(audit)
   if (!normalized.byEmployee.length) return null
 
   const fairnessClass = SEMAPHORE_STYLES[normalized.summary.fairnessLevel] || SEMAPHORE_STYLES.neutral
   const limits = normalized.summary.limits || {}
+  const realism = normalized.summary.realism || {}
+  const reasonEntries = toReasonEntries(realism)
+  const compliance = realism.fullWeekSlots
+    ? Math.round((realism.preferredBreaksRespected / realism.fullWeekSlots) * 100)
+    : 0
   const rows = sortByPointsDesc(normalized.byEmployee)
   const topEmployee = rows[0]
 
@@ -95,6 +111,11 @@ export function AuditPanel({ audit, compact = false }) {
         <p className="mt-3 text-xs text-slate-400">
           Umbrales: &lt;{limits.fairnessHighMaxDiff} / {limits.fairnessMediumMaxDiff} · {limits.weeklyHoursLimit}h semana
         </p>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-300">
+          <p className="rounded-lg border border-white/10 bg-slate-900/60 px-2 py-1">5+2 cumplido: {compliance}%</p>
+          <p className="rounded-lg border border-white/10 bg-slate-900/60 px-2 py-1">Fallback 6+1: {realism.fallback6x1Count || 0}</p>
+        </div>
       </section>
     )
   }
@@ -164,6 +185,24 @@ export function AuditPanel({ audit, compact = false }) {
         <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1">
           Limites: {limits.weeklyHoursLimit}h/semana · {limits.monthlyHoursLimit}h/mes
         </span>
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-slate-900/50 p-3 text-sm text-slate-200">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Realismo de Rota</p>
+          <p className="mt-2">Cumplimiento 5+2: <span className="font-semibold text-cyan-200">{compliance}%</span></p>
+          <p>Semanas 6+1: <span className="font-semibold text-amber-200">{realism.fallback6x1Count || 0}</span></p>
+          <p>Rupturas de libranza planificada: <span className="font-semibold text-rose-200">{realism.plannedRestOverrides || 0}</span></p>
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-slate-900/50 p-3 text-sm text-slate-200">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Motivos de Fallback</p>
+          <ul className="mt-2 space-y-1">
+            {reasonEntries.length
+              ? reasonEntries.map(([reason, total]) => <li key={reason}>{fallbackLabel(reason)}: {total}</li>)
+              : <li>Sin fallback en el periodo</li>}
+          </ul>
+        </div>
       </div>
     </section>
   )

@@ -11,11 +11,27 @@ const parseNumber = (value, fallback) => {
 
 const toBlockId = (name) => `${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`
 
+const toAssignmentsMap = (value) => {
+  if (!value) return {}
+  if (!Array.isArray(value)) return value
+  return value.reduce((acc, assignment) => {
+    if (!assignment) return acc
+    const key = makeCellKey(assignment.employeeId, assignment.day)
+    return { ...acc, [key]: assignment }
+  }, {})
+}
+
+const normalizeEmployees = (employees) =>
+  (employees || []).map((employee) => ({
+    id: employee.id,
+    name: employee.name || employee.nombre || `Empleado ${employee.id}`,
+  }))
+
 const toBootstrapState = (payload) => ({
-  employees: payload.employees || [],
+  employees: normalizeEmployees(payload.employees),
   blocks: payload.blocks || [],
   days: payload.days || [],
-  plan: payload.assignments || {},
+  plan: toAssignmentsMap(payload.assignments || payload.plan),
   audit: payload.audit || { summary: null, byEmployee: [] },
   alerts: payload.alerts || [],
 })
@@ -146,6 +162,8 @@ export function ScheduleTimeline({ user, onLogout }) {
   const [plan, setPlan] = useState({})
   const [audit, setAudit] = useState({ summary: null, byEmployee: [] })
   const [alerts, setAlerts] = useState([])
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [analyticsOpen, setAnalyticsOpen] = useState(false)
   const [analyticsDetailed, setAnalyticsDetailed] = useState(false)
   const [picked, setPicked] = useState(null)
@@ -154,6 +172,11 @@ export function ScheduleTimeline({ user, onLogout }) {
   const [error, setError] = useState('')
 
   const monthLabel = useMemo(() => toMonthLabel(year, month), [year, month])
+  const coverage = useMemo(() => {
+    const total = days.length * blocks.length
+    const covered = Object.values(plan).filter(Boolean).length
+    return { covered, total }
+  }, [days, blocks, plan])
 
   useEffect(() => {
     const loadBootstrap = async () => {
@@ -161,6 +184,7 @@ export function ScheduleTimeline({ user, onLogout }) {
         const payload = await getScheduleBootstrap({ month, year })
         const state = toBootstrapState(payload)
         applyScheduleState(state, { setEmployees, setBlocks, setDays, setPlan, setAudit, setAlerts })
+        setRefreshKey((current) => current + 1)
       } catch (currentError) {
         setError(currentError.message || 'No se pudo cargar el timeline')
       }
@@ -179,12 +203,18 @@ export function ScheduleTimeline({ user, onLogout }) {
   }
 
   const handleGenerate = async () => {
+    setIsGenerating(true)
     try {
-      const payload = await generateMonthlySchedule({ month, year, blocks })
-      const state = toBootstrapState(payload)
+      setError('')
+      await generateMonthlySchedule({ month, year, blocks })
+      const refreshed = await getScheduleBootstrap({ month, year })
+      const state = toBootstrapState(refreshed)
       applyScheduleState(state, { setEmployees, setBlocks, setDays, setPlan, setAudit, setAlerts })
+      setRefreshKey((current) => current + 1)
     } catch (currentError) {
       setError(currentError.message || 'No se pudo generar la rota')
+    } finally {
+      setIsGenerating(false)
     }
   }
 
@@ -288,9 +318,12 @@ export function ScheduleTimeline({ user, onLogout }) {
               onMonth={(value) => setMonth(parseNumber(value, month))}
               onYear={(value) => setYear(parseNumber(value, year))}
               onGenerate={handleGenerate}
+              coverage={coverage}
+              isGenerating={isGenerating}
             />
 
             <TimelineGrid
+              key={`timeline-${refreshKey}-${month}-${year}`}
               employees={employees}
               days={days}
               blocks={blocks}
@@ -303,6 +336,7 @@ export function ScheduleTimeline({ user, onLogout }) {
               onHover={handleHover}
               onInvalidDrop={handleInvalidDrop}
               hoverReason={hoverReason}
+              alerts={alerts}
             />
           </div>
         </div>

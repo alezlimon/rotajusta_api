@@ -3,4 +3,5 @@ export const SCHEDULE_CONFIG = {
   TEAM_NAME: 'Equipo Sala',
   LOCALE: 'es-ES',
   MAX_DAILY_HOURS: 8,
+  MAX_6X1_EXCEPTIONS_PER_EMPLOYEE_MONTH: 1,
 }

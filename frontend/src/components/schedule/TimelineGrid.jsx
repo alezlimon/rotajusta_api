@@ -52,6 +52,16 @@ const getCellClassName = (isHovered, isAllowed, isDragging) => {
     : `${base} cursor-not-allowed border-red-300/60 bg-red-400/10`
 }
 
+const isWeekend = (year, month, day) => {
+  const weekDay = new Date(year, month - 1, day).getDay()
+  return weekDay === 0 || weekDay === 6
+}
+
+const dayTone = (year, month, day) =>
+  isWeekend(year, month, day)
+    ? 'bg-slate-900/50'
+    : 'bg-slate-950/40'
+
 export function TimelineGrid({
   employees,
   days,
@@ -66,6 +76,8 @@ export function TimelineGrid({
   onInvalidDrop,
   hoverReason,
   alerts,
+  month,
+  year,
 }) {
   const minWidth = `${days.length * SCHEDULE_CONFIG.DAY_CELL_WIDTH + 220}px`
   const template = `220px repeat(${days.length}, minmax(${SCHEDULE_CONFIG.DAY_CELL_WIDTH}px, 1fr))`
@@ -97,10 +109,11 @@ export function TimelineGrid({
                 const hovered = isHoveredCell(hoverCell, employee.id, day)
                 const cellClassName = getCellClassName(hovered, dropState.allowed, isDragging)
                 const vacancyCount = !assignment && employee.id === employees[0]?.id ? (unassignedByDay[day] || 0) : 0
+                const tone = dayTone(year, month, day)
                 return (
                   <div
                     key={`${employee.id}-${day}`}
-                    className={`${cellClassName} relative`}
+                    className={`${cellClassName} ${tone} relative`}
                     onDragLeave={() => onHover(null, null)}
                     onDragOver={(event) => {
                       onHover(employee.id, day)
@@ -121,7 +134,7 @@ export function TimelineGrid({
                       onDrop(employee.id, day)
                     }}
                   >
-                    <div draggable={Boolean(assignment)} onDragStart={() => onPick(employee.id, day)}>
+                    <div draggable={Boolean(assignment)} onDragStart={() => onPick(employee.id, day)} className="min-h-14 rounded-lg">
                       {renderBlockPill(assignment, blocks)}
                       {renderVacancyPill(vacancyCount)}
                     </div>

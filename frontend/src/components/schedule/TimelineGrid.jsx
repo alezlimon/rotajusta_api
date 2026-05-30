@@ -78,6 +78,8 @@ export function TimelineGrid({
   alerts,
   month,
   year,
+  onCellClick,
+  onEmployeeClick,
 }) {
   const minWidth = `${days.length * SCHEDULE_CONFIG.DAY_CELL_WIDTH + 220}px`
   const template = `220px repeat(${days.length}, minmax(${SCHEDULE_CONFIG.DAY_CELL_WIDTH}px, 1fr))`
@@ -100,9 +102,13 @@ export function TimelineGrid({
 
           {employees.map((employee) => (
             <div key={employee.id} className="grid border-b border-white/5" style={{ gridTemplateColumns: template }}>
-              <div className="sticky left-0 z-20 border-r border-white/10 bg-slate-900 px-3 py-3 text-sm font-medium text-white shadow-[6px_0_14px_rgba(2,6,23,0.35)]">
+              <button
+                type="button"
+                onClick={() => onEmployeeClick?.(employee)}
+                className="sticky left-0 z-20 border-r border-white/10 bg-slate-900 px-3 py-3 text-left text-sm font-medium text-white shadow-[6px_0_14px_rgba(2,6,23,0.35)] transition-colors hover:bg-slate-800/90 hover:text-cyan-100"
+              >
                 {employee.name}
-              </div>
+              </button>
               {days.map((day) => {
                 const assignment = plan[makeCellKey(employee.id, day)]
                 const dropState = canDropTo(employee.id, day)
@@ -113,7 +119,8 @@ export function TimelineGrid({
                 return (
                   <div
                     key={`${employee.id}-${day}`}
-                    className={`${cellClassName} ${tone} relative`}
+                    className={`${cellClassName} ${tone} relative ${onCellClick ? 'cursor-pointer' : ''}`}
+                    onClick={() => onCellClick?.(employee.id, day)}
                     onDragLeave={() => onHover(null, null)}
                     onDragOver={(event) => {
                       onHover(employee.id, day)

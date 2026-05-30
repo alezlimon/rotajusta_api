@@ -38,3 +38,5 @@ export const refreshCurrentUser = async () => {
 }
 
 export const getEmployees = () => api.get('/auth/employees')
+
+export const getEmployeeProfile = (employeeId) => api.get(`/auth/employees/${employeeId}/profile`)

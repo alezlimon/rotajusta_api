@@ -85,7 +85,18 @@ Prioridades UX confirmadas:
         └── constants/
 
 7. Reglas de Colaboración con Copilot
-- Mantener las decisiones alineadas con esta jerarquía de producto.
-- Si hay conflicto entre “más features” y “más claridad”, priorizar claridad.
-- Todo cambio en generación debe venir con test de guardrail.
-- Todo cambio UX debe mantener lectura rápida del mánager en menos de 5 segundos.
+- Priorizar claridad, realismo y mantenibilidad por encima de meter features.
+- Todo cambio de motor debe incluir test de guardrail.
+- Todo cambio UX debe leerse en menos de 5 segundos.
+- Todo código debe ser simple, reutilizable y fácil de mantener.
+- Ninguna función/helper debe superar 25 líneas; si crece, se divide.
+- Preferir composición y reutilización antes que duplicación o lógica densa.
+
+8. Roadmap de Producto Prioritario
+Antes de tocar roles avanzados, el orden de trabajo es:
+
+1) Base operativa: crear, editar y eliminar turnos manualmente; abrir perfil de empleado desde su nombre.
+2) Continuidad entre meses: arrastrar la puntuación del mes anterior para influir en el siguiente.
+3) Perfil de empleado: datos básicos, puntuación, horas recientes, turnos recientes, etiquetas y notas.
+4) Etiquetas y skills: preferencias (#noches, #tardes, #mañanas) y habilidades (supervisor, barista, cocktelero, jefe_partida, parrilla).
+5) Roles y jerarquía avanzada: se tratará aparte, no mezclar con la capa inicial de perfiles y etiquetas.

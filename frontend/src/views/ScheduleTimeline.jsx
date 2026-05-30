@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { logout } from '../services/authService'
 import { generateMonthlySchedule, getScheduleBootstrap, moveScheduleAssignment } from '../services/scheduleService'
-import { AuditPanel, BlockConfigurator, GenerationToolbar, StaffingAlertsPanel, TimelineGrid, createBlockDraft, makeCellKey, toMonthLabel } from '../components'
+import { AuditPanel, BlockConfigurator, EmployeeProfileModal, GenerationToolbar, ManualTurnModal, StaffingAlertsPanel, TimelineGrid, createBlockDraft, makeCellKey, toMonthLabel } from '../components'
 import { SCHEDULE_CONFIG } from '../constants/schedule'
 
 const parseNumber = (value, fallback) => {
@@ -222,6 +222,8 @@ export function ScheduleTimeline({ user, onLogout }) {
   const [hoverCell, setHoverCell] = useState(null)
   const [hoverReason, setHoverReason] = useState('')
   const [error, setError] = useState('')
+  const [manualTurnModal, setManualTurnModal] = useState({ open: false, employeeId: null, fecha: null })
+  const [employeeProfile, setEmployeeProfile] = useState({ open: false, employee: null })
 
   const monthLabel = useMemo(() => toMonthLabel(year, month), [year, month])
   const coverage = useMemo(() => {
@@ -330,6 +332,25 @@ export function ScheduleTimeline({ user, onLogout }) {
   const handleLogout = () => {
     logout()
     onLogout?.()
+  }
+
+  const openManualTurnModal = (employeeId, day) =>
+    setManualTurnModal({ open: true, employeeId, fecha: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}` })
+
+  const openEmployeeProfile = (employee) =>
+    setEmployeeProfile({ open: true, employee })
+
+  const closeManualTurnModal = () =>
+    setManualTurnModal({ open: false, employeeId: null, fecha: null })
+
+  const closeEmployeeProfile = () =>
+    setEmployeeProfile({ open: false, employee: null })
+
+  const handleManualTurnSaved = async () => {
+    const refreshed = await getScheduleBootstrap({ month, year })
+    const state = toBootstrapState(refreshed)
+    applyScheduleState(state, { setEmployees, setBlocks, setDays, setPlan, setAudit, setAlerts })
+    setRefreshKey((current) => current + 1)
   }
 
   const closeAnalytics = () => setAnalyticsOpen(false)
@@ -450,6 +471,8 @@ export function ScheduleTimeline({ user, onLogout }) {
               alerts={alerts}
               month={month}
               year={year}
+              onCellClick={openManualTurnModal}
+              onEmployeeClick={openEmployeeProfile}
             />
           </section>
         ) : null}
@@ -504,6 +527,21 @@ export function ScheduleTimeline({ user, onLogout }) {
           </aside>
         </div>
       ) : null}
+
+      <ManualTurnModal
+        isOpen={manualTurnModal.open}
+        employees={employees}
+        initialEmployeeId={manualTurnModal.employeeId}
+        initialDate={manualTurnModal.fecha}
+        onClose={closeManualTurnModal}
+        onSaved={handleManualTurnSaved}
+      />
+
+      <EmployeeProfileModal
+        isOpen={employeeProfile.open}
+        employee={employeeProfile.employee}
+        onClose={closeEmployeeProfile}
+      />
     </main>
   )
 }

@@ -81,6 +81,53 @@ const swaggerDefinition = {
           error: { type: 'string', example: 'Descripción del error' },
         },
       },
+      EmployeeProfileResponse: {
+        type: 'object',
+        properties: {
+          employee: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer', example: 42 },
+              nombre: { type: 'string', example: 'Ana Camarera' },
+              email: { type: 'string', example: 'ana.employee@rotajusta.local' },
+              role: { type: 'string', example: 'EMPLOYEE' },
+              saldo_puntos_actual: { type: 'integer', example: 84 },
+            },
+          },
+          summary: {
+            type: 'object',
+            properties: {
+              recent_points: { type: 'integer', example: 75 },
+              recent_days: { type: 'integer', example: 2 },
+              recent_hours: { type: 'number', example: 8 },
+              recent_turns: { type: 'integer', example: 2 },
+            },
+          },
+          recent_history: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                fecha: { type: 'string', format: 'date', example: '2026-05-18' },
+                puntos_totales: { type: 'integer', example: 40 },
+                es_turno_partido: { type: 'boolean', example: false },
+              },
+            },
+          },
+          recent_turns: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                fecha: { type: 'string', format: 'date', example: '2026-05-18' },
+                hora_inicio: { type: 'string', example: '09:00' },
+                hora_fin: { type: 'string', example: '13:00' },
+                es_festivo: { type: 'boolean', example: false },
+              },
+            },
+          },
+        },
+      },
     },
   },
   paths: {
@@ -134,6 +181,49 @@ const swaggerDefinition = {
           },
           500: {
             description: 'Error interno del servidor (fallo de base de datos).',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { error: 'Error interno del servidor' } } },
+          },
+        },
+      },
+    },
+    '/api/auth/employees/{employee_id}/profile': {
+      get: {
+        tags: ['Auth'],
+        summary: 'Devuelve un perfil resumido de empleado.',
+        description: 'Requiere rol MANAGER. Incluye datos básicos, resumen reciente, últimos turnos e historial reciente.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'employee_id',
+            in: 'path',
+            required: true,
+            schema: { type: 'integer', minimum: 1, example: 42 },
+            description: 'Identificador del empleado a consultar.',
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Perfil resumido del empleado.',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/EmployeeProfileResponse' } } },
+          },
+          400: {
+            description: 'employee_id inválido.',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { error: 'employee_id inválido' } } },
+          },
+          401: {
+            description: 'Token JWT ausente o inválido.',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { error: 'Token inválido o expirado' } } },
+          },
+          403: {
+            description: 'El usuario autenticado no tiene el rol MANAGER.',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { error: 'Acceso denegado: se requiere rol MANAGER' } } },
+          },
+          404: {
+            description: 'Empleado no encontrado.',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { error: 'Empleado no encontrado' } } },
+          },
+          500: {
+            description: 'Error interno del servidor.',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { error: 'Error interno del servidor' } } },
           },
         },

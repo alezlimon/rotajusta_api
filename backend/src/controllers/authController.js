@@ -18,6 +18,11 @@ const findUserByEmail = async (email) => {
 
 const isValidPassword = (password, hash) => bcrypt.compare(password, hash);
 
+const toMinutes = (timeValue) => {
+  const [hours, minutes] = String(timeValue).split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
 const toAuthPayload = (user) => ({
   id: user.id,
   nombre: user.nombre,
@@ -35,6 +40,35 @@ const findEmployees = async () => {
   const query = 'SELECT id, nombre, email, rol FROM usuarios WHERE rol = $1 ORDER BY nombre ASC';
   const { rows } = await pool.query(query, ['EMPLOYEE']);
   return rows;
+};
+
+const findEmployeeById = async (id) => {
+  const query = 'SELECT id, nombre, email, rol, saldo_puntos_actual FROM usuarios WHERE id = $1 LIMIT 1';
+  const { rows } = await pool.query(query, [id]);
+  return rows[0] || null;
+};
+
+const findEmployeeHistory = async (id, limit) => {
+  const query = 'SELECT fecha, puntos_totales, es_turno_partido, desglose FROM historial_puntos_diarios WHERE usuario_id = $1 ORDER BY fecha DESC, id DESC LIMIT $2';
+  const { rows } = await pool.query(query, [id, limit]);
+  return rows;
+};
+
+const findEmployeeTurns = async (id, limit) => {
+  const query = 'SELECT fecha, hora_inicio, hora_fin, es_festivo FROM turnos_guardados WHERE usuario_id = $1 ORDER BY fecha DESC, hora_inicio DESC, id DESC LIMIT $2';
+  const { rows } = await pool.query(query, [id, limit]);
+  return rows;
+};
+
+const summarizeProfile = ({ history, turns }) => {
+  const recentHours = turns.reduce((total, turn) => total + ((toMinutes(turn.hora_fin) - toMinutes(turn.hora_inicio)) / 60), 0);
+  const recentPoints = history.reduce((total, item) => total + Number(item.puntos_totales || 0), 0);
+  return {
+    recent_points: recentPoints,
+    recent_days: history.length,
+    recent_hours: Number(recentHours.toFixed(1)),
+    recent_turns: turns.length,
+  };
 };
 
 const toProfilePayload = (user) => ({
@@ -88,4 +122,28 @@ const employees = async (req, res) => {
   }
 };
 
-module.exports = { login, me, employees };
+const employeeProfile = async (req, res) => {
+  const employeeId = Number(req.params.employee_id);
+  if (!Number.isFinite(employeeId) || employeeId < 1) return res.status(400).json({ error: 'employee_id inválido' });
+
+  try {
+    const employee = await findEmployeeById(employeeId);
+    if (!employee) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+    const [history, turns] = await Promise.all([
+      findEmployeeHistory(employeeId, 10),
+      findEmployeeTurns(employeeId, 10),
+    ]);
+
+    return res.status(200).json({
+      employee: toProfilePayload(employee),
+      summary: summarizeProfile({ history, turns }),
+      recent_history: history,
+      recent_turns: turns,
+    });
+  } catch (_) {
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
+};
+
+module.exports = { login, me, employees, employeeProfile };
